@@ -4,12 +4,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from gpt2 import main as demo
+from gpt2.model import main as demo
 
 
 def test_import_does_not_run_demo() -> None:
     result = subprocess.run(
-        [sys.executable, "-c", "import gpt2.main"],
+        [sys.executable, "-c", "import gpt2.model.main"],
         capture_output=True,
         text=True,
         check=True,

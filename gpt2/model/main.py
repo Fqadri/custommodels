@@ -1,7 +1,7 @@
 import tiktoken
 import torch
 
-from gpt2._12_gpt2model import (
+from ._12_gpt2model import (
     GPT2_CONFIG_124M,
     GPT2Model,
     generate_text_from_inputsample,

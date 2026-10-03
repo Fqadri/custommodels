@@ -192,4 +192,3 @@ def print_model_details():
     print("Total size of the model: {total_size_mb:.2f} MB".format(total_size_mb = total_params * 4 / (1024*1024))) # Assuming each parameter is 32-bit (4 bytes) floats.
 
     return
-
