@@ -1,7 +1,8 @@
 
 import torch
 import torch.nn as nn
-import tiktoken
+
+from .gpt2_tokenizer import GPT2Tokenizer
 
 # Here we will create a dummy GPT model to illustrate the architecture of GPT models. This is not a functional model but serves to show how the components fit together.
 
@@ -89,7 +90,7 @@ GPT_CONFIG_124M = {
 # Input sequence length or batch size
 B = 1
 batch = []
-tokenizer = tiktoken.get_encoding("gpt2")  # Using GPT-2 tokenizer
+tokenizer = GPT2Tokenizer()
 
 txt1 = "Every effort moves you"
 txt2 = "Every day holds a"

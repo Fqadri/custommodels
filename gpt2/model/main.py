@@ -1,20 +1,19 @@
-import tiktoken
 import torch
 
-from ._12_gpt2model import (
-    GPT2_CONFIG_124M,
-    GPT2Model,
+from common.generation import (
     generate_text_from_inputsample,
     generate_text_from_inputsample_with_sampling,
-    text_to_token_ids,
-    token_ids_to_text,
 )
+from common.tokenization import text_to_token_ids, token_ids_to_text
+
+from ._12_gpt2model import GPT2_CONFIG_124M, GPT2Model
+from .gpt2_tokenizer import GPT2Tokenizer
 
 
-def main() -> None:
+def main(dtype: torch.dtype = torch.float32) -> None:
     torch.manual_seed(123)
-    tokenizer = tiktoken.get_encoding("gpt2")
-    model = GPT2Model(GPT2_CONFIG_124M, debug=False)
+    tokenizer = GPT2Tokenizer()
+    model = GPT2Model(GPT2_CONFIG_124M, debug=False, dtype=dtype)
     model.eval()
 
     start_context = "Every effort moves you"

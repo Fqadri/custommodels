@@ -3,22 +3,130 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import torch
 from matplotlib.ticker import MaxNLocator
+from torch.utils.data import DataLoader, TensorDataset
+
+from .generation import generate_text_from_inputsample
+from .tokenization import text_to_token_ids, token_ids_to_text
 
 # Here we will go over training loop for model including evaluation and text generation.
 # After training we will have a Pre-trained model that is only good at Text Completion.
-from ..model._12_gpt2model import (
-    GPT2Model,
-    generate_text_from_inputsample,
-    generate_text_from_inputsample_with_sampling,
-    text_to_token_ids,
-    token_ids_to_text,
-)
-from ._1_trainingvalidationlossconcept import (
-    calc_loss_batch,
-    calc_loss_loader,
-    create_train_val_dataloaders,
-)
 
+# Here we will go over training and validation loss concept.
+# We compute training loss while training and then we compute validation loss on unseen data to see how well the model is doing.
+
+# Calculate loss for a single batch.
+def calc_loss_batch(input_batch, target_batch, model, device):
+    input_batch = input_batch.to(
+        device
+    )  # Send the input and target batches to the device (CPU or GPU).
+    target_batch = target_batch.to(device)
+
+    logits = model(
+        input_batch
+    )  # logits shape: (b, num_tokens, vocab_size).  PyTorch builds a computation graph automatically during the forward pass.
+
+    loss = torch.nn.functional.cross_entropy(
+        logits.flatten(
+            0, 1
+        ),  # Flatten the logits to shape (b * num_tokens, vocab_size) because we calculate the overall loss for all tokens in the batch.
+        target_batch.flatten(),
+    )  # Flatten the target to shape (b * num_tokens)
+
+    return loss
+
+# Calculate loss over an entire data loader (multiple batches).
+# Goal is to train the model so that this loss is minimized (close to 0)
+def calc_loss_loader(data_loader, model, device, num_batches=None):
+    total_loss = 0
+
+    if len(data_loader) == 0:
+        raise ValueError("Cannot evaluate loss on an empty data loader.")
+    elif num_batches is not None and num_batches <= 0:
+        raise ValueError("num_batches must be positive.")
+    elif num_batches is None:
+        num_batches = len(
+            data_loader
+        )  # If num_batches is not specified, we iterate over all batches in the data loader.
+    else:
+        num_batches = min(
+            num_batches, len(data_loader)
+        )  # Reduce the number of batches to match the total number of batches in data loader.
+
+    for i, (input_batch, target_batch) in enumerate(data_loader):
+        if i >= num_batches:
+            break
+        loss = calc_loss_batch(input_batch, target_batch, model, device)
+        total_loss += loss.item()  # Sum loss for each batch.
+
+    return total_loss / num_batches
+
+def create_dataloader_v1(
+    text, batch_size, context_size, stride, shuffle=True, drop_last=True, num_workers=0,
+    *, tokenizer,
+):
+    if context_size <= 0 or stride <= 0 or batch_size <= 0 or num_workers < 0:
+        raise ValueError(
+            "Batch, context, and stride sizes must be positive; workers must be non-negative."
+        )
+    token_ids = torch.tensor(tokenizer.encode(text), dtype=torch.long)
+    if len(token_ids) <= context_size:
+        raise ValueError("Text must contain more tokens than the context size.")
+    windows = token_ids.unfold(0, context_size + 1, stride)
+    dataset = TensorDataset(windows[:, :-1], windows[:, 1:])
+    if drop_last and len(dataset) < batch_size:
+        raise ValueError("Not enough text for a complete training batch.")
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        drop_last=drop_last,
+        num_workers=num_workers,
+    )
+
+def create_train_val_dataloaders(
+    context_length, batch_size, *, tokenizer, data_path: str | Path
+):
+    with open(data_path, "r") as file:
+        raw_text = file.read()
+
+    # Text / Tokens are too small for training but this is for illustration only.
+    # In practice, you would use a much larger dataset or load a pre-existing weights for the model.
+    total_characters = len(raw_text)
+    total_tokens = len(tokenizer.encode(raw_text))
+    print("Total characters in text:", total_characters)
+    print("Total tokens in text:", total_tokens)
+
+    # Split the data into training and validation sets. Use 90% of data for training, 10% for validation (for model evaluation)
+    train_ratio = 0.90
+    train_size = int(train_ratio * total_characters)
+
+    train_data = raw_text[:train_size]
+    val_data = raw_text[train_size:]
+
+    # Now, we use data loaders to create batches of data for training and validation.
+    train_loader = create_dataloader_v1(
+        train_data,
+        batch_size=batch_size,  # In practice, training with batch sizes of 1024 or larger is common.
+        context_size=context_length,
+        stride=context_length,  # no overlap
+        shuffle=True,
+        drop_last=True,
+        num_workers=0,
+        tokenizer=tokenizer,
+    )
+
+    val_loader = create_dataloader_v1(
+        val_data,
+        batch_size=batch_size,
+        context_size=context_length,
+        stride=context_length,
+        shuffle=False,
+        drop_last=False,
+        num_workers=0,
+        tokenizer=tokenizer,
+    )
+
+    return train_loader, val_loader, tokenizer
 
 # Helps evaluate whether the training improves the model. This is called Evaluation.
 def evaluate_model(model, train_loader, val_loader, device, eval_iter):
@@ -36,16 +144,17 @@ def evaluate_model(model, train_loader, val_loader, device, eval_iter):
         model.train(was_training)
     return train_loss, val_loss
 
-
 # Similar to evaluate_model (which gives numerical feedback), this function is a convienience function that provides text that we can use to track whether the model improves during training.
-def generate_and_print_sample(model, tokenizer, start_context, device):
+def generate_and_print_sample(
+    model, tokenizer, start_context, device, *, context_size
+):
+    # Use the caller's context size instead of inspecting model-specific layers.
+    if context_size <= 0:
+        raise ValueError("context_size must be positive.")
     was_training = model.training
     model.eval()
-    context_size = model.position_embedding.weight.shape[
-        0
-    ]  # Access model attribute directly to get context size
-    encoded = text_to_token_ids(start_context, tokenizer).to(device)
     try:
+        encoded = text_to_token_ids(start_context, tokenizer).to(device)
         with torch.no_grad():
             token_ids = generate_text_from_inputsample(
                 model, encoded, max_new_tokens=50, context_size=context_size
@@ -56,7 +165,6 @@ def generate_and_print_sample(model, tokenizer, start_context, device):
     print(
         "Generated text:\n", generated_text.replace("\n", " ")
     )  # compact display by removing newlines
-
 
 def plot_losses(
     epochs_seen,
@@ -86,7 +194,6 @@ def plot_losses(
         fig.savefig(output_path)
     plt.close(fig)
 
-
 # Training look with enhancements in training.
 # 1. Learning Warmup for first few epochs to stabilize training
 # 2. Cosine Decay for learning rate to help model converge better
@@ -105,8 +212,11 @@ def train_model_enhanced(
     warmup_steps=20,
     initial_lr=3e-05,
     min_lr=1e-6,
+    *,
+    context_size,
 ):
-
+    if context_size <= 0:
+        raise ValueError("context_size must be positive.")
     train_losses, val_losses, track_tokens_seen, track_lrs = [], [], [], []
     tokens_seen = 0
     global_step = -1
@@ -167,7 +277,9 @@ def train_model_enhanced(
                     f"Val Loss: {val_loss:.4f}"
                 )
 
-        generate_and_print_sample(model, tokenizer, start_context, device)
+        generate_and_print_sample(
+            model, tokenizer, start_context, device, context_size=context_size
+        )
 
     return train_losses, val_losses, track_tokens_seen, track_lrs
 
@@ -184,7 +296,11 @@ def train_model_simple(
     eval_iter,  # number of batches to use, from train_loader, for evaluating model
     start_context,  # initial text to see how the model is doing
     tokenizer,
+    *,
+    context_size,
 ):
+    if context_size <= 0:
+        raise ValueError("context_size must be positive.")
     if num_epochs <= 0 or eval_freq <= 0 or eval_iter <= 0:
         raise ValueError("Epoch count and evaluation intervals must be positive.")
     if not len(train_loader) or not len(val_loader):
@@ -227,19 +343,30 @@ def train_model_simple(
 
         # generate text after each epoch to see how the model is doing
         if start_context:
-            generate_and_print_sample(model, tokenizer, start_context, device)
+            generate_and_print_sample(
+                model, tokenizer, start_context, device, context_size=context_size
+            )
 
     # lists of training and validation losses, and tokens seen over time (based on evaluation frequency) for plotting.
     return train_losses, val_losses, track_tokens_seen
 
 
-def train_model(model, context_length, optimizer, num_epochs, start_context):
+def train_model(
+    model, context_length, optimizer, num_epochs, start_context, *,
+    tokenizer, data_path: str | Path,
+):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
+    # Prepare next-token training data
+    # Pre-training is self-supervised, where the model learns to predict the next token in a sequence.
     train_loader, val_loader, tokenizer = create_train_val_dataloaders(
-        context_length=context_length, batch_size=2
+        context_length=context_length, batch_size=2, tokenizer=tokenizer,
+        data_path=data_path,
     )
+
+    # Train the model using the simple training loop defined earlier.
+    # During training, measure training and validation loss every eval_freq steps.
     train_losses, val_losses, tokens_seen = train_model_simple(
         model=model,
         train_loader=train_loader,
@@ -251,72 +378,8 @@ def train_model(model, context_length, optimizer, num_epochs, start_context):
         eval_iter=5,
         start_context=start_context,
         tokenizer=tokenizer,
+        context_size=context_length,
     )
 
     return train_losses, val_losses, tokens_seen, tokenizer
 
-
-# Example usage of the model for training and evaluation.
-def main() -> None:
-
-    GPT2_CONFIG_124M = {
-        "vocab_size": 50257,
-        "dim_model": 768,
-        "num_layers": 12,
-        "num_heads": 12,
-        "context_length": 256,  # Change to 256 for faster training and reducing computational costs.
-        "drop_rate": 0.1,
-        "qkv_bias": False,
-    }
-
-    torch.manual_seed(42)
-
-    model = GPT2Model(GPT2_CONFIG_124M)
-
-    # AdamW is a popular optimizer for training transformer models.
-    optimizer = torch.optim.AdamW(
-        model.parameters(),  # returns all training weight parameters of the model
-        lr=3e-4,  # learning rate. Common values are between 1e-3 and 1e-5. Helps control how much to change the model weights at each step.
-        weight_decay=1e-1,  # helps prevent overfitting by penalizing large weights.
-    )
-
-    num_epochs = 10
-    start_context = "Every effort moves you"
-    train_losses, val_losses, tokens_seen, tokenizer = train_model(
-        model, GPT2_CONFIG_124M["context_length"], optimizer, num_epochs, start_context
-    )
-    device = next(model.parameters()).device
-
-    epochs_seen = torch.linspace(
-        0, num_epochs, len(train_losses)
-    )  # Create a tensor with evenly spaced values from 0 to num_epochs
-    plot_losses(epochs_seen, tokens_seen, train_losses, val_losses)
-
-    token_ids = generate_text_from_inputsample(
-        model,
-        text_to_token_ids(start_context, tokenizer).to(device),
-        max_new_tokens=15,
-        context_size=GPT2_CONFIG_124M["context_length"],
-    )
-
-    generated_text = token_ids_to_text(token_ids, tokenizer)
-    print("Generated text with greedy decoding:\n", generated_text.replace("\n", " "))
-
-    # Using sampling to generate text after model training.
-    token_ids = generate_text_from_inputsample_with_sampling(
-        model,
-        text_to_token_ids(start_context, tokenizer).to(device),
-        max_new_tokens=15,
-        context_size=GPT2_CONFIG_124M["context_length"],
-        temperature=0.5,  # Higher the temperature, more random the output. Lower the temperature, more deterministic the output.
-        top_k=25,
-    )
-
-    generated_text = token_ids_to_text(token_ids, tokenizer)
-    print(
-        "Generated text with sampling:\n", generated_text.replace("\n", " ")
-    )  # compact display by removing newlines
-
-
-if __name__ == "__main__":
-    main()

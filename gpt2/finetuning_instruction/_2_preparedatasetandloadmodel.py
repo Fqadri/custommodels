@@ -1,16 +1,14 @@
 from functools import partial
 from pathlib import Path
 
-import tiktoken
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from ..model._12_gpt2model import (
-    GPT2Model,
-    generate_text_from_inputsample_with_sampling,
-    text_to_token_ids,
-    token_ids_to_text,
-)
+from common.generation import generate_text_from_inputsample_with_sampling
+from common.tokenization import text_to_token_ids, token_ids_to_text
+
+from ..model._12_gpt2model import GPT2Model
+from ..model.gpt2_tokenizer import GPT2Tokenizer
 from ..save_load_model._3_loadopenaiweights import load_weights_into_gpt
 from ..save_load_model.gpt_download import DEFAULT_MODELS_DIR, download_and_load_gpt2
 from ._1_rawdataandpromptformatconcept import DEFAULT_DATA_PATH, format_input, load_data
@@ -214,7 +212,7 @@ def prepare_dataset(
     num_workers: int = 0,
 ) -> None:
     torch.manual_seed(123)
-    tokenizer = tiktoken.get_encoding("gpt2")
+    tokenizer = GPT2Tokenizer()
     train_data, val_data, test_data, train_loader, val_loader, test_loader = (
         create_train_val_test_dataloaders(
             load_data(data_path),
@@ -254,7 +252,7 @@ def main() -> None:
     print("Targets:\n", targets)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tokenizer = tiktoken.get_encoding("gpt2")
+    tokenizer = GPT2Tokenizer()
     num_workers = 0
     batch_size = 8
     data = load_data()

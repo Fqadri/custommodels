@@ -1,13 +1,11 @@
 import numpy as np
-import tiktoken
 import torch
 
-from ..model._12_gpt2model import (
-    GPT2Model,
-    generate_text_from_inputsample_with_sampling,
-    text_to_token_ids,
-    token_ids_to_text,
-)
+from common.generation import generate_text_from_inputsample_with_sampling
+from common.tokenization import text_to_token_ids, token_ids_to_text
+
+from ..model._12_gpt2model import GPT2Model
+from ..model.gpt2_tokenizer import GPT2Tokenizer
 from .gpt_download import DEFAULT_MODELS_DIR, download_and_load_gpt2
 
 # This file demostrates downloading weights from OpenAI's GPT-2 and loading them into a custom GPT-2 implementation.
@@ -156,7 +154,7 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     gpt.to(device)
     start_context = "Every effort moves you"
-    tokenizer = tiktoken.get_encoding("gpt2")
+    tokenizer = GPT2Tokenizer()
     token_ids = generate_text_from_inputsample_with_sampling(
         gpt,
         text_to_token_ids(start_context, tokenizer).to(device),

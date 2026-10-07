@@ -1,55 +1,47 @@
 
 
 import torch
-import torch.nn as nn
 
-from . import _6_multiHeadAttention as mha
-from . import _9_feedforward as ff
+from common.multi_head_attention import MultiHeadAttention
+from common.transformer_block import TransformerBlock as SharedTransformerBlock
+
 from . import _8_layernormalization as ln
+from . import _9_feedforward_gelu as ff
 
-# Here we define a single transformer block, which consists of a multi-head self-attention layer followed by a feed-forward neural network.
-# Each of these components is followed by layer normalization and dropout for regularization.
 
-class TransformerBlock(nn.Module) : 
-    def __init__(self,cfg, debug=False) : 
-        super().__init__()
+# GPT-2 supplies attention, GELU feed-forward, and LayerNorm to the shared block.
+class TransformerBlock(SharedTransformerBlock):
+    def __init__(
+            self,
+            cfg, 
+            debug=False,
+            dtype = None) : 
 
-        self.attention = mha.MultiHeadAttention(
+        # Create components for the transformer block: attention, feed-forward network, and layer norms.
+        attention = MultiHeadAttention(
             dim_in=cfg["dim_model"], 
             dim_out=cfg["dim_model"], 
             context_length=cfg["context_length"], 
             dropout=cfg["drop_rate"], 
             num_heads=cfg["num_heads"], 
             qkv_bias=cfg["qkv_bias"],
-            debug=debug
+            debug=debug,
+            dtype=dtype # dtype setting to be able to instantiate the model with a lower precision later 
         )
 
-        self.ff = ff.FeedForward(cfg, debug=debug) # Also referred to as MLP
-        self.norm1 = ln.LayerNorm(cfg["dim_model"])
-        self.norm2 = ln.LayerNorm(cfg["dim_model"])
-        self.dropout = nn.Dropout(cfg["drop_rate"])
-
-    # x - input to the transformer block. Shape (batch of input sequences - B, num_tokens - T, dim_model - d_model)
-    # LayerNorm is applied before self-attention and feed-forward network components. This is known as Pre-LN Transformer.
-    # Older architectures such as the original transformer model applied LayerNorm after these components. This is known as Post-LN Transformer. Worse training.
-    def forward(self, x) :
-        shortcut = x
-        x = self.norm1(x)
-
-        x = self.attention(x) # shape (B, T, d_model)
-        x = self.dropout(x)
-
-        x = x + shortcut       # Add the original input (shortcut connection)
-
-        shortcut = x           # Shortcut connection to feed-forward network.
-        x = self.norm2(x)
+        feed_forward = ff.FeedForward(cfg, debug=debug, dtype=dtype)
         
-        x = self.ff(x)         # Also referred to as MLP
-        x = self.dropout(x)
+        norm1 = ln.LayerNorm(cfg["dim_model"], dtype=dtype)
+        norm2 = ln.LayerNorm(cfg["dim_model"], dtype=dtype)
         
-        x = x + shortcut       # Add the original input (shortcut connection)
-
-        return x
+        # Initialize the shared transformer block with the specified components.
+        super().__init__(
+            attention=attention,
+            ff=feed_forward,
+            norm1=norm1,
+            norm2=norm2,
+            drop_rate=cfg["drop_rate"],
+        )
 
 
 if __name__ == "__main__":

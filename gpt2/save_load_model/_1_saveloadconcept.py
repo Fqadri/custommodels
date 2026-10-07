@@ -2,13 +2,13 @@ from pathlib import Path
 
 import torch
 
-from ..model._12_gpt2model import (
-    GPT2Model,
-    generate_text_from_inputsample,
-    text_to_token_ids,
-    token_ids_to_text,
-)
-from ..pretraining_eval._2_trainingandevaluation import train_model
+from common.generation import generate_text_from_inputsample
+from common.pretraining import train_model
+from common.tokenization import text_to_token_ids, token_ids_to_text
+
+from ..model._12_gpt2model import GPT2Model
+from ..model.gpt2_tokenizer import GPT2Tokenizer
+from ..pretraining_eval._2_pretraining_eval import DEFAULT_DATA_PATH
 
 
 def main() -> None:
@@ -25,8 +25,11 @@ def main() -> None:
     model = GPT2Model(config)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=0.1)
     start_context = "Every effort moves you"
+    tokenizer = GPT2Tokenizer()
     _, _, _, tokenizer = train_model(
-        model, config["context_length"], optimizer, 10, start_context
+        model, config["context_length"], optimizer, 10, start_context,
+        tokenizer=tokenizer,
+        data_path=DEFAULT_DATA_PATH,
     )
     device = next(model.parameters()).device
     model.eval()

@@ -8,23 +8,42 @@ from unittest.mock import Mock
 import pytest
 import torch
 
+from common import pretraining as training
 from gpt2.finetuning_instruction import _1_rawdataandpromptformatconcept as data
 from gpt2.finetuning_instruction import _2_preparedatasetandloadmodel as preparation
 from gpt2.finetuning_instruction import _3_instructionfinetuningandeval as finetuning
 from gpt2.finetuning_instruction.main import main
 from gpt2.model._12_gpt2model import GPT2Model
-from gpt2.pretraining_eval import _1_trainingvalidationlossconcept as losses
-from gpt2.pretraining_eval import _2_trainingandevaluation as training
+from gpt2.pretraining_eval import _2_pretraining_eval as pretraining_demo
 
 
 class TinyTokenizer:
     eot_token = 31
 
-    def encode(self, text, **kwargs):
+    def encode(self, text):
         return [1, 2, 3, 4]
 
     def decode(self, tokens):
         return " ".join(map(str, tokens))
+
+
+def test_common_pretraining_import_does_not_load_model_packages():
+    script = """
+import sys
+import common.pretraining
+assert not any(name.split(".")[0] in {"gpt2", "llama2"} for name in sys.modules)
+assert not common.pretraining.plt.get_fignums()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "MPLBACKEND": "Agg"},
+        timeout=60,
+    )
+    assert result.stdout == ""
+    assert result.stderr == ""
 
 
 @pytest.fixture
@@ -180,13 +199,130 @@ def test_loaders_reject_empty_splits_and_dropped_training_batch(dataset_path):
 def test_pretraining_windows_have_shifted_targets(monkeypatch):
     tokenizer = Mock()
     tokenizer.encode.return_value = list(range(10))
-    monkeypatch.setattr(losses.tiktoken, "get_encoding", Mock(return_value=tokenizer))
-    loader = losses.create_dataloader_v1(
-        "example", batch_size=3, context_size=3, stride=3, shuffle=False
+    monkeypatch.setattr(
+        pretraining_demo, "GPT2Tokenizer",
+        Mock(side_effect=AssertionError("Use the supplied tokenizer")),
+    )
+    loader = training.create_dataloader_v1(
+        "example", batch_size=3, context_size=3, stride=3, shuffle=False,
+        tokenizer=tokenizer,
     )
     inputs, targets = next(iter(loader))
     assert inputs.tolist() == [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
     assert targets.tolist() == [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    tokenizer.encode.assert_called_once_with("example")
+
+
+def test_pretraining_splits_reuse_supplied_tokenizer(monkeypatch, tmp_path):
+    tokenizer = Mock()
+    tokenizer.encode.return_value = list(range(10))
+    monkeypatch.setattr(
+        pretraining_demo, "GPT2Tokenizer",
+        Mock(side_effect=AssertionError("Use the supplied tokenizer")),
+    )
+    data_path = tmp_path / "custom-corpus.txt"
+    text = "Custom training text. " * 10
+    data_path.write_text(text, encoding="utf-8")
+    train_loader, val_loader, returned = training.create_train_val_dataloaders(
+        3, 2, tokenizer=tokenizer, data_path=data_path
+    )
+    assert returned is tokenizer
+    assert tokenizer.encode.call_count == 3
+    full_text, train_text, val_text = [
+        call.args[0] for call in tokenizer.encode.call_args_list
+    ]
+    assert full_text == text
+    assert train_text + val_text == full_text
+    assert len(train_text) == int(0.9 * len(full_text))
+    assert len(train_loader) == 1
+    assert len(val_loader) == 2
+    for loader in (train_loader, val_loader):
+        inputs, targets = next(iter(loader))
+        assert torch.equal(inputs[:, 1:], targets[:, :-1])
+
+
+def test_pretraining_rejects_missing_corpus(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        training.create_train_val_dataloaders(
+            3, 2, tokenizer=TinyTokenizer(), data_path=tmp_path / "missing.txt"
+        )
+
+
+def test_gpt2_default_corpus_is_independent_of_working_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert pretraining_demo.DEFAULT_DATA_PATH.is_absolute()
+    assert pretraining_demo.DEFAULT_DATA_PATH.is_file()
+    tokenizer = Mock()
+    tokenizer.encode.return_value = list(range(10))
+    train_loader, val_loader, returned = training.create_train_val_dataloaders(
+        3, 2, tokenizer=tokenizer, data_path=str(pretraining_demo.DEFAULT_DATA_PATH)
+    )
+    assert returned is tokenizer
+    assert len(train_loader) == 1
+    assert len(val_loader) == 2
+
+
+def test_pretraining_orchestrator_passes_tokenizer_through_training(
+    tiny_model, monkeypatch, tmp_path
+):
+    tokenizer = TinyTokenizer()
+    loader = [(torch.tensor([[1, 2]]), torch.tensor([[2, 3]]))]
+    loaders = Mock(return_value=(loader, loader, tokenizer))
+    monkeypatch.setattr(training, "create_train_val_dataloaders", loaders)
+    monkeypatch.setattr(torch.cuda, "is_available", Mock(return_value=False))
+    monkeypatch.setattr(
+        pretraining_demo, "GPT2Tokenizer",
+        Mock(side_effect=AssertionError("Use the supplied tokenizer")),
+    )
+    before = tiny_model.token_embedding.weight.detach().clone()
+    optimizer = torch.optim.AdamW(tiny_model.parameters(), lr=0.01)
+    sample = Mock(wraps=training.generate_and_print_sample)
+    monkeypatch.setattr(training, "generate_and_print_sample", sample)
+    data_path = tmp_path / "corpus.txt"
+    train_losses, val_losses, tokens_seen, returned = training.train_model(
+        tiny_model, 8, optimizer, 1, "prompt", tokenizer=tokenizer, data_path=data_path
+    )
+    loaders.assert_called_once_with(
+        context_length=8, batch_size=2, tokenizer=tokenizer, data_path=data_path
+    )
+    assert returned is tokenizer
+    assert len(train_losses) == len(val_losses) == 1
+    assert tokens_seen == [2]
+    assert not torch.equal(before, tiny_model.token_embedding.weight)
+    sample.assert_called_once_with(
+        tiny_model, tokenizer, "prompt", torch.device("cpu"), context_size=8
+    )
+
+
+def test_validation_concept_demo_reports_losses_without_training(
+    tiny_model, monkeypatch, capsys
+):
+    loader = [(torch.tensor([[1, 2]]), torch.tensor([[2, 3]]))]
+    tokenizer = TinyTokenizer()
+    tokenizer_factory = Mock(return_value=tokenizer)
+    loaders = Mock(return_value=(loader, loader, tokenizer))
+    monkeypatch.setattr(pretraining_demo, "GPT2Tokenizer", tokenizer_factory)
+    monkeypatch.setattr(pretraining_demo, "create_train_val_dataloaders", loaders)
+    monkeypatch.setattr(pretraining_demo, "GPT2Model", Mock(return_value=tiny_model))
+    monkeypatch.setattr(torch.cuda, "is_available", Mock(return_value=False))
+    before = {
+        name: value.clone() for name, value in tiny_model.state_dict().items()
+    }
+
+    pretraining_demo.demonstrate_training_validation_loss()
+
+    tokenizer_factory.assert_called_once_with()
+    loaders.assert_called_once_with(
+        256, 2, tokenizer=tokenizer, data_path=pretraining_demo.DEFAULT_DATA_PATH
+    )
+    output = capsys.readouterr().out
+    assert "Train Loader:" in output
+    assert "Validation Loader:" in output
+    assert "Training Loss:" in output
+    assert "Validation Loss:" in output
+    for name, value in tiny_model.state_dict().items():
+        assert torch.equal(value, before[name])
+    assert all(parameter.grad is None for parameter in tiny_model.parameters())
 
 
 @pytest.mark.parametrize("is_training", [True, False])
@@ -201,16 +337,94 @@ def test_evaluation_restores_model_mode(tiny_model, is_training):
     assert tiny_model.training == is_training
 
 
-def test_sample_generation_uses_requested_device(tiny_model, monkeypatch):
-    tiny_model.eval()
+@pytest.mark.parametrize("is_training", [True, False])
+def test_sample_generation_uses_requested_device_and_context(
+    tiny_model, monkeypatch, is_training
+):
+    tiny_model.train(is_training)
 
     def generate(model, encoded, **kwargs):
         assert encoded.device.type == "meta"
+        assert kwargs["context_size"] == 3
+        assert kwargs["max_new_tokens"] == 50
+        assert not model.training
+        assert not torch.is_grad_enabled()
         return torch.tensor([[1, 2]])
 
     monkeypatch.setattr(training, "generate_text_from_inputsample", generate)
-    training.generate_and_print_sample(tiny_model, TinyTokenizer(), "prompt", "meta")
-    assert not tiny_model.training
+    training.generate_and_print_sample(
+        tiny_model, TinyTokenizer(), "prompt", "meta", context_size=3
+    )
+    assert tiny_model.training == is_training
+
+
+@pytest.mark.parametrize("is_training", [True, False])
+@pytest.mark.parametrize("failure_stage", ["encoding", "generation"])
+def test_sample_generation_restores_mode_on_failure(
+    tiny_model, monkeypatch, is_training, failure_stage
+):
+    tiny_model.train(is_training)
+    tokenizer = TinyTokenizer()
+    failure = Mock(side_effect=RuntimeError("sample failed"))
+    if failure_stage == "encoding":
+        monkeypatch.setattr(tokenizer, "encode", failure)
+    else:
+        monkeypatch.setattr(training, "generate_text_from_inputsample", failure)
+    with pytest.raises(RuntimeError, match="sample failed"):
+        training.generate_and_print_sample(
+            tiny_model, tokenizer, "prompt", "cpu", context_size=3
+        )
+    assert tiny_model.training == is_training
+
+
+@pytest.mark.parametrize(
+    "trainer", [training.train_model_simple, training.train_model_enhanced]
+)
+@pytest.mark.parametrize("context_size", [0, -1])
+def test_training_rejects_invalid_sample_context_before_updates(
+    tiny_model, trainer, context_size
+):
+    optimizer = Mock()
+    loader = [(torch.tensor([[1, 2]]), torch.tensor([[2, 3]]))]
+    with pytest.raises(ValueError, match="context_size must be positive"):
+        trainer(
+            tiny_model, loader, loader, optimizer, "cpu", 1, 1, 1,
+            "prompt", TinyTokenizer(), context_size=context_size,
+        )
+    optimizer.step.assert_not_called()
+
+
+def test_post_training_demo_disables_dropout_for_both_generators(
+    tiny_model, monkeypatch
+):
+    tiny_model.train()
+    monkeypatch.setattr(pretraining_demo, "GPT2Model", Mock(return_value=tiny_model))
+    tokenizer = TinyTokenizer()
+    tokenizer_factory = Mock(return_value=tokenizer)
+    train = Mock(return_value=([1.0], [1.0], [8], tokenizer))
+    monkeypatch.setattr(pretraining_demo, "GPT2Tokenizer", tokenizer_factory)
+    monkeypatch.setattr(pretraining_demo, "train_model", train)
+    monkeypatch.setattr(pretraining_demo, "plot_losses", Mock())
+
+    def generate(model, encoded, **kwargs):
+        assert model is tiny_model
+        assert all(not module.training for module in model.modules())
+        return encoded
+
+    greedy = Mock(side_effect=generate)
+    sampling = Mock(side_effect=generate)
+    monkeypatch.setattr(pretraining_demo, "generate_text_from_inputsample", greedy)
+    monkeypatch.setattr(
+        pretraining_demo, "generate_text_from_inputsample_with_sampling", sampling
+    )
+
+    pretraining_demo.main()
+
+    tokenizer_factory.assert_called_once_with()
+    assert train.call_args.kwargs["tokenizer"] is tokenizer
+    assert train.call_args.kwargs["data_path"] == pretraining_demo.DEFAULT_DATA_PATH
+    greedy.assert_called_once()
+    sampling.assert_called_once()
 
 
 def test_train_cli_runs_real_optimization_and_saves_outputs(
@@ -223,11 +437,13 @@ def test_train_cli_runs_real_optimization_and_saves_outputs(
     get_model = Mock(return_value=tiny_model)
     monkeypatch.setattr(finetuning, "get_pretrained_model", get_model)
     monkeypatch.setattr(
-        finetuning.tiktoken, "get_encoding", Mock(return_value=TinyTokenizer())
+        finetuning, "GPT2Tokenizer", Mock(return_value=TinyTokenizer())
     )
     monkeypatch.setattr(
         training.plt, "show", Mock(side_effect=AssertionError("Interactive plot"))
     )
+    sample = Mock(wraps=training.generate_and_print_sample)
+    monkeypatch.setattr(training, "generate_and_print_sample", sample)
     main(
         [
             "train",
@@ -240,7 +456,7 @@ def test_train_cli_runs_real_optimization_and_saves_outputs(
             "--batch-size",
             "8",
             "--context-length",
-            "8",
+            "4",
             "--device",
             "cpu",
             "--max-new-tokens",
@@ -252,6 +468,8 @@ def test_train_cli_runs_real_optimization_and_saves_outputs(
         ]
     )
     get_model.assert_called_once_with("124M", models_dir=tmp_path / "cache")
+    assert sample.call_count == 1
+    assert sample.call_args.kwargs["context_size"] == 8
     checkpoint = torch.load(output / "gpt2-124M-sft.pth", weights_only=True)
     assert set(checkpoint) == set(initial_weights)
     assert all(torch.isfinite(value).all() for value in checkpoint.values())

@@ -5,11 +5,11 @@ import torch.nn as nn
 # Here we implement Layer Normalization from scratch.
 
 class LayerNorm(nn.Module):
-    def __init__(self,d_model):
+    def __init__(self, d_model, dtype: torch.dtype | None = None):
         super().__init__()
         # Shift and Scale are two trainable parameters that allow the model to adjust the normalized output.
-        self.scale = nn.Parameter(torch.ones(d_model))
-        self.shift = nn.Parameter(torch.zeros(d_model))
+        self.scale = nn.Parameter(torch.ones(d_model, dtype=dtype))
+        self.shift = nn.Parameter(torch.zeros(d_model, dtype=dtype))
         self.eps = 1e-5 # Small constant to avoid division by zero
         # No bias term is needed here since shift serves that purpose.
 

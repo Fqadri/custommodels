@@ -3,152 +3,137 @@
 ## Description
 
 Custom implementations of transformer models for learning how their building
-blocks and text generation work. The repository currently includes a PyTorch
-GPT-2 implementation covering attention, layer normalization, feed-forward
-networks, transformer blocks, greedy and sampling-based generation, pretrained
-weight loading, and supervised instruction fine-tuning.
-A separate folder is reserved for Qwen3, with more models to be added over time.
+blocks and text generation work.
 
-## Folder organization
+### GPT-2
 
-Each model lives in its own top-level folder. All models share one
-[uv](https://docs.astral.sh/uv/) project and dependency environment; there is no
-shared Python package that model folders must be placed inside.
+The repository starts with a GPT-2 implementation covering attention, layer
+normalization, feed-forward networks, transformer blocks, greedy and sampled
+generation, pretrained-weight loading, and supervised instruction fine-tuning.
 
-- [gpt2/](gpt2/) - GPT-2 implementation and demos.
-  - [model/](gpt2/model/) contains the architecture and numbered building-block
-    examples. [_12_gpt2model.py](gpt2/model/_12_gpt2model.py) defines the model
-    configuration, model class, and text-generation helpers;
-    [main.py](gpt2/model/main.py) runs the generation demo.
-  - [finetuning_instruction/](gpt2/finetuning_instruction/) contains instruction
-    data, prompt formatting, dataset preparation, and the fine-tuning workflow.
-    Its [main.py](gpt2/finetuning_instruction/main.py) selects which step to run.
-  - [pretraining_eval/](gpt2/pretraining_eval/) contains reusable loss, training,
-    evaluation, and plotting helpers, plus guarded learning demos.
-  - [save_load_model/](gpt2/save_load_model/) contains checkpoint download,
-    pretrained-weight mapping, and save/load helpers.
-- [qwen3/](qwen3/) - Placeholder for a future Qwen3 implementation;
-  [main.py](qwen3/main.py) is currently empty.
-- [tests/](tests/) - Automated tests for generation, fine-tuning, and weight loading.
-- [pyproject.toml](pyproject.toml) - Project metadata and shared dependencies.
-- [uv.lock](uv.lock) - Resolved dependency versions.
-- [.python-version](.python-version) - Python version used by uv (3.11).
+### LLaMA 2
 
-## Run locally
+LLaMA 2 is assembled from the same shared attention and transformer-block
+components, with these changes from GPT-2:
 
-1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
-2. Open a terminal in the repository root.
-3. Install the dependencies and run the GPT-2 demo:
+- **RoPE** replaces learned absolute positional embeddings.
+- **RMSNorm** replaces LayerNorm.
+- **SwiGLU** replaces the GELU feed-forward network.
+- Attention and feed-forward projections are **bias-free**.
 
-   ```powershell
-   uv sync
-   uv run -m gpt2.model.main
-   ```
+## Structure
 
-uv manages Python 3.11 and the project's virtual environment. Run model entry
-points with `-m` from the repository root so package imports resolve correctly,
-rather than executing `gpt2\model\main.py` directly.
+- [common/](common/) - Shared causal attention, pre-norm transformer blocks,
+  generation, tokenizer helpers, and [training/evaluation](common/pretraining.py).
+  Callers supply the model, tokenizer, context size, and corpus path.
+- [gpt2/](gpt2/) - Learned positional embeddings, LayerNorm, GELU, and a
+  tiktoken byte-level BPE wrapper.
+- [llama2/](llama2/) - Interleaved RoPE on Q/K, RMSNorm, SwiGLU, bias-free
+  attention, and a SentencePiece wrapper.
+- [tests/](tests/) - Component, generation, training, and checkpoint-loading tests.
+- [qwen3/](qwen3/) - Placeholder for a future model.
 
-The demo starts with `"Every effort moves you"` and generates two identical
-greedy continuations of 10 tokens, followed by a 15-token sampled continuation.
-The model is randomly initialized, not pretrained, so incoherent output is
-expected. The first run requires internet access to download GPT-2 tokenizer
-data, which tiktoken caches locally.
+## Setup
 
-### Fine-tune GPT-2 on instructions
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and run from
+the repository root:
 
-Run these commands from the repository root. First, inspect the prompts and
-dataset batches without loading a model or starting training:
+```powershell
+uv sync
+```
+
+The project uses Python 3.11. Run entry points with `-m` so package imports resolve.
+
+## GPT-2
+
+```powershell
+# Randomly initialized generation demo; float32 by default.
+uv run -m gpt2.model.main
+
+# Pretrain from scratch on the bundled corpus, plot losses, then generate.
+uv run -m gpt2.pretraining_eval._2_pretraining_eval
+```
+
+Random weights produce incoherent text. The small pretraining corpus is for
+learning, not reproducing OpenAI GPT-2's capabilities.
+
+### Instruction fine-tuning
 
 ```powershell
 uv run -m gpt2.finetuning_instruction.main preview
 uv run -m gpt2.finetuning_instruction.main prepare
-```
-
-The bundled [instruction-data.json](gpt2/finetuning_instruction/instruction-data.json)
-contains 1,100 examples, split into 935 training, 55 validation, and 110 test
-entries. The default data path is relative to the module, not the terminal's
-working directory.
-
-For a lower-memory starting run, use the 124M model, a smaller batch, and shorter
-training sequences:
-
-```powershell
 uv run -m gpt2.finetuning_instruction.main train --model 124M --batch-size 2 --epochs 1 --context-length 256
 ```
 
-Unlike the random-initialization demo, this loads pretrained OpenAI GPT-2
-weights before fine-tuning. Missing weights are downloaded on the first run
-and cached under `gpt2\save_load_model\gpt2_models`; existing cached files are
-reused without a network request. TensorFlow reads the original checkpoint;
-training itself uses PyTorch.
+Fine-tuning loads OpenAI's pretrained weights and uses the bundled 1,100-example
+instruction dataset. Weights are cached under `gpt2\save_load_model\gpt2_models`;
+checkpoints, loss plots, and test responses go to `outputs\gpt2\instruction`.
+Use `train --help` for data, device, model-size, and output options.
+Automatic response scoring is not implemented.
 
-CUDA is used when available; otherwise training runs on CPU and may be slow.
-Larger models need substantially more memory. Sequences longer than
-`--context-length` are truncated, which can remove part of the prompt or answer.
+## LLaMA 2 pretrained inference
 
-The original larger configuration is also available:
-
-```powershell
-uv run -m gpt2.finetuning_instruction.main train --model 355M --batch-size 8 --epochs 2
-```
-
-Useful training options:
-
-| Option | Default / purpose |
-|---|---|
-| `--model` | `355M`; accepts `124M`, `355M`, `774M`, or `1558M`. |
-| `--epochs`, `--batch-size` | `2` epochs and batches of `8`. |
-| `--context-length` | `1024`; must be between `1` and `1024`. |
-| `--device` | `auto`; accepts `cpu` or `cuda` to choose explicitly. |
-| `--data` | Use a different instruction JSON file. |
-| `--models-dir` | Override the pretrained-weight cache directory. |
-| `--output-dir` | Override the output directory, for example `outputs\my-run`. |
-| `--max-new-tokens` | `256` generated tokens per test response. |
-| `--num-workers` | `0`; data-loader workers, with CPU collation for Windows compatibility. |
-
-A custom dataset must be a non-empty JSON list whose entries have string
-`instruction`, `input`, and `output` fields. Use an empty string for absent input.
-Training requires at least 10 entries and a batch size no larger than the
-training split. The final incomplete training batch is dropped; validation and
-test batches are retained.
-
-Training prints initial losses, evaluates periodically, and generates a sample
-after each epoch. It then saves the model weights, a loss plot, and responses
-for the test split under `outputs\gpt2\instruction` by default:
-
-```text
-outputs/
-  gpt2/
-    instruction/
-      gpt2-124M-sft.pth
-      losses.png
-      instruction-data-with-response.json
-```
-
-The checkpoint filename reflects the selected model size. It contains the
-model's PyTorch state dictionary, not optimizer state for resuming training.
-The loss plot is saved without opening an interactive window. Downloaded
-weights and default outputs are excluded from Git. Reruns overwrite output
-files; use a different `--output-dir` to retain previous runs.
-
-Automatic response scoring is not implemented yet;
-[_4_evaluationandscoring.py](gpt2/finetuning_instruction/_4_evaluationandscoring.py)
-remains a placeholder. To see all available training arguments:
+Obtain access to [Meta's LLaMA 2 repository](https://huggingface.co/meta-llama/Llama-2-7b),
+then authenticate and run:
 
 ```powershell
-uv run -m gpt2.finetuning_instruction.main train --help
+$env:HF_HOME = "D:\hf_cache"
+uv run hf auth login
+uv run python -X utf8 -u -m llama2.main
 ```
 
-### Run tests and checks
+The entry point loads the **base LLaMA 2 7B checkpoint** into the custom model,
+then performs greedy and sampled generation. It currently runs on CPU with
+bfloat16 weights. Allow roughly **27+ GiB of RAM**, plus runtime headroom:
+the current loader holds both the model and checkpoint in memory.
+
+[download_load_weights.py](llama2/download_load_weights.py) downloads and maps
+Meta's original `consolidated.00.pth` checkpoint layer by layer. It validates
+layer counts and tensor shapes, copies parameters in place, and preserves
+the adjacent-pair Q/K layout used by our RoPE.
+
+For **download only**, without allocating a model:
+
+```powershell
+uv run python -c "from llama2.download_load_weights import download_llama2; print(download_llama2())"
+```
+
+The helper returns `(tokenizer_path, checkpoint_path)` as `Path` objects.
+It honors `HF_HOME` / `HF_HUB_CACHE`; the example above uses `D:\hf_cache\hub`.
+The weights are approximately 13.5 GB, and cached files are reused.
+
+### Base versus chat weights
+
+Pass `instructionfinetuned=True` to
+[get_llama_model_using_weights](llama2/main.py) to select `Llama-2-7b-chat`.
+The caller decides when to call `model.eval()`.
+
+Chat weights do **not** automatically apply a chat template. Format a single
+user turn as `[INST] Your instruction [/INST]`. The tokenizer already prepends
+BOS (`<s>`) without appending EOS; do not add BOS twice. Plain prompts such as
+`Every effort moves you` are suitable for base-model text completion.
+
+## LLaMA-style pretraining
+
+```powershell
+uv run -m llama2.pretraining_eval._pretraining_eval --tokenizer C:\models\llama\tokenizer.model --epochs 1
+```
+
+This trains a **134M-parameter float32 learning model**, not the official 7B
+model, using the shared training code. It evaluates losses, generates epoch-end
+samples, plots losses, and runs final inference. CUDA is used when available.
+
+The runner defaults to 10 epochs and its own copy of
+[the-verdict.txt](llama2/pretraining_eval/the-verdict.txt); GPT-2's original is
+retained. Use `--data` for another corpus. A compatible 32,000-token SentencePiece
+model file is required. LLaMA instruction fine-tuning is not yet implemented.
+
+## Checks
 
 ```powershell
 uv run python -m pytest -q
-uv run ruff check gpt2\model\main.py gpt2\finetuning_instruction gpt2\pretraining_eval gpt2\save_load_model tests
 uv pip check
 ```
 
-The tests use small models, mock tokenizers, and synthetic checkpoint weights.
-They cover import safety, data preparation, command routing, real optimizer
-updates, saved outputs, and download failures without downloading model weights
-or tokenizer data.
+Weight-loader tests use synthetic checkpoints and mocked downloads. Full
+pretrained 7B generation has not yet been verified end to end in this project.

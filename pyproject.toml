@@ -5,9 +5,11 @@ description = "Custom Implementation of Transfomer Models."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "huggingface-hub>=2.0.0",
     "matplotlib>=3.9",
     "numpy>=1.26",
     "requests>=2.32",
+    "sentencepiece>=0.2.2",
     "tensorflow>=2.18,<3",
     "tiktoken>=0.7",
     "torch>=2.4,<3",

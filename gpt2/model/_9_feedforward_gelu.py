@@ -5,7 +5,7 @@ import torch.nn as nn
 # Here we will go over the FeedForward network as used in transformers and implement it in PyTorch.
 
 class GELU(nn.Module):
-    def __int__(self):
+    def __init__(self):
         super().__init__()
 
     # x is of shape (B, T, d_model) where B is batch size, T is sequence length, and d_model is the feature dimension.
@@ -17,13 +17,19 @@ class GELU(nn.Module):
 
 # FeedForward network as used in transformers. Consists of two (neuron network layers) linear layers with a GELU activation in between.
 class FeedForward(nn.Module):
-    def __init__(self, cfg, debug=False):
+    def __init__(
+            self,
+            cfg,
+            debug=False,
+            dtype = None # dtype setting to be able to instantiate the model with a lower precision later
+            ):
+        
         super().__init__()
         dmodel = cfg["dim_model"]
         self.layers = nn.Sequential(
-            nn.Linear(dmodel, 4 * dmodel), # Expand the feature dimension from d_model to 4*d_model (common to get better representation). Think of this layer having 4*d_model neurons.
+            nn.Linear(dmodel, 4 * dmodel, dtype=dtype), # Expand the feature dimension from d_model to 4*d_model (common to get better representation). Think of this layer having 4*d_model neurons.
             GELU(),
-            nn.Linear(4 * dmodel, dmodel) # Project back to d_model. Think of this layer having d_model neurons.
+            nn.Linear(4 * dmodel, dmodel, dtype=dtype) # Project back to d_model. Think of this layer having d_model neurons.
         )
 
     # x - input to the feed-forward network. Shape (batch of input sequences - B, num_tokens - T, dim_model - d_model)

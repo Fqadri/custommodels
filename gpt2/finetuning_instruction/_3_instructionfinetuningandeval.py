@@ -2,20 +2,18 @@ import json
 import time
 from pathlib import Path
 
-import tiktoken
 import torch
 from tqdm import tqdm
 
-from ..model._12_gpt2model import (
-    generate_text_from_inputsample_with_sampling,
-    text_to_token_ids,
-    token_ids_to_text,
-)
-from ..pretraining_eval._2_trainingandevaluation import (
+from common.generation import generate_text_from_inputsample_with_sampling
+from common.pretraining import (
     evaluate_model,
     plot_losses,
     train_model_simple,
 )
+from common.tokenization import text_to_token_ids, token_ids_to_text
+
+from ..model.gpt2_tokenizer import GPT2Tokenizer
 from ..save_load_model.gpt_download import DEFAULT_MODELS_DIR
 from ._1_rawdataandpromptformatconcept import (
     DEFAULT_DATA_PATH,
@@ -49,6 +47,8 @@ def finetune_model_for_instruction_following(
     tokenizer,
     start_context="",
     num_epochs=2,
+    *,
+    context_size,
 ):
     if num_epochs <= 0:
         raise ValueError("num_epochs must be positive.")
@@ -65,6 +65,7 @@ def finetune_model_for_instruction_following(
         eval_iter=5,
         start_context=start_context,
         tokenizer=tokenizer,
+        context_size=context_size,
     )
     elapsed_minutes = (time.perf_counter() - start_time) / 60
     print(f"Fine-tuning completed in {elapsed_minutes:.2f} minutes.")
@@ -145,7 +146,7 @@ def run_finetuning(
         else device_name
     )
     torch.manual_seed(123)
-    tokenizer = tiktoken.get_encoding("gpt2")
+    tokenizer = GPT2Tokenizer()
     train_data, val_data, test_data, train_loader, val_loader, _ = (
         create_train_val_test_dataloaders(
             load_data(data_path),
@@ -174,6 +175,8 @@ def run_finetuning(
         tokenizer,
         start_context=format_input(val_data[0]),
         num_epochs=num_epochs,
+        # Epoch samples retain the model's full context, independent of training truncation.
+        context_size=model.position_embedding.num_embeddings,
     )
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
