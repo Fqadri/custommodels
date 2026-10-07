@@ -5,7 +5,7 @@ description = "Custom Implementation of Transfomer Models."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
-    "huggingface-hub>=2.0.0",
+    "huggingface-hub>=0.34,<1",
     "matplotlib>=3.9",
     "numpy>=1.26",
     "requests>=2.32",
@@ -14,6 +14,11 @@ dependencies = [
     "tiktoken>=0.7",
     "torch>=2.4,<3",
     "tqdm>=4.66",
+    "ipywidgets>=8.1.9",
+    "jupyterlab>=4.6.3",
+    "transformers>=4.37,<5",
+    "accelerate>=1.15.0",
+    "bertviz>=1.4.1",
 ]
 
 [[tool.uv.index]]

@@ -44,6 +44,12 @@ uv sync
 
 The project uses Python 3.11. Run entry points with `-m` so package imports resolve.
 
+The [notebooks/](notebooks/) examples use Transformers 4.x, Accelerate, and
+BertViz with a compatible Hugging Face Hub version. Select the project's
+`.venv` kernel and restart it after dependency updates. vLLM is not included;
+its notebooks need a separate compatible Linux/WSL environment. CUDA-only
+cells also require a CUDA-enabled environment or CPU-safe changes.
+
 ## GPT-2
 
 ```powershell
@@ -137,3 +143,16 @@ uv pip check
 
 Weight-loader tests use synthetic checkpoints and mocked downloads. Full
 pretrained 7B generation has not yet been verified end to end in this project.
+
+## Start JupyterLab
+
+From PowerShell:
+
+```powershell
+Set-Location D:\GitHub\custom-models
+uv run jupyter lab
+```
+
+JupyterLab uses the project's environment and normally opens your browser
+automatically. If it does not, open the URL printed in the terminal
+(`http://localhost:8888/lab?token=...`). Keep the token private.
