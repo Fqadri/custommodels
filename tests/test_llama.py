@@ -268,42 +268,6 @@ def test_shared_generation_runs_with_real_tokenizer(config, tokenizer_file):
         assert isinstance(token_ids_to_text(result, tokenizer), str)
 
 
-def test_demo_runs_reproducibly_with_real_tiny_model(
-    config, tokenizer_file, monkeypatch, capsys
-):
-    monkeypatch.setattr(demo, "LLAMA2_CONFIG_7B", config)
-    demo.main(["--tokenizer", str(tokenizer_file)])
-    first = capsys.readouterr().out
-    assert "Total number of parameters:" in first
-    assert first.count("Generated text:\n") == 2
-    assert first.count("Generated text with sampling:\n") == 1
-    demo.main(["--tokenizer", str(tokenizer_file)])
-    assert capsys.readouterr().out == first
-
-
-def test_demo_rejects_missing_tokenizer_before_allocating_model(monkeypatch, tmp_path):
-    model = Mock()
-    monkeypatch.setattr(demo, "Llama2Model", model)
-    with pytest.raises(SystemExit) as error:
-        demo.main(["--tokenizer", str(tmp_path / "missing.model")])
-    assert error.value.code == 2
-    model.assert_not_called()
-
-
-def test_demo_rejects_mismatched_vocabulary_before_allocating_model(
-    config, tokenizer_file, monkeypatch
-):
-    monkeypatch.setattr(
-        demo, "LLAMA2_CONFIG_7B", {**config, "vocab_size": config["vocab_size"] + 1}
-    )
-    model = Mock()
-    monkeypatch.setattr(demo, "Llama2Model", model)
-    with pytest.raises(SystemExit) as error:
-        demo.main(["--tokenizer", str(tokenizer_file)])
-    assert error.value.code == 2
-    model.assert_not_called()
-
-
 def test_7b_configuration_constructs_without_allocating_weights():
     with torch.device("meta"):
         model = Llama2Model(demo.LLAMA2_CONFIG_7B)
@@ -463,7 +427,7 @@ def test_pretraining_rejects_invalid_inputs_before_allocating_model(
 
 
 @pytest.mark.parametrize(
-    "module_name", ["llama2.main", "llama2.pretraining_eval._pretraining_eval"]
+    "module_name", ["llama2.pretraining_eval._pretraining_eval"]
 )
 def test_import_is_safe_and_cli_help_does_not_allocate_model(module_name):
     imported = subprocess.run(

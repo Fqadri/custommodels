@@ -127,38 +127,3 @@ def load_weights_into_llama(model, param_config, weights_file) :
     assign(model.out_head.weight, weights["output.weight"])
 
     return
-
-def get_model_with_preexisting_weights() -> tuple[Llama2Model, LlamaTokenizer]:
-    LLAMA2_CONFIG_7B = {
-    "vocab_size": 32000,     # Vocabulary size
-    "context_length": 4096,  # Context length
-    "emb_dim": 4096,         # Embedding dimension
-    "n_heads": 32,           # Number of attention heads
-    "n_layers": 32,          # Number of layers
-    "hidden_dim": 11008,     # NEW: Size of the intermediate dimension in FeedForward
-    "dtype": torch.bfloat16  # NEW: Lower-precision dtype to reduce memory usage
-    }
-
-    model = Llama2Model(LLAMA2_CONFIG_7B)
-
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
-    
-    model.to(device);
-
-    tokenizer_file, weight_file = download_llama2()
-    
-    if not tokenizer_file.is_file():
-        raise FileNotFoundError(f"Tokenizer file not found: {tokenizer_file}")
-    if not weight_file.is_file():
-        raise FileNotFoundError(f"Weight file not found: {weight_file}")
-    
-    tokenizer = LlamaTokenizer(str(tokenizer_file))
-
-    load_weights_into_llama(model, LLAMA2_CONFIG_7B, weight_file)
-
-    return model, tokenizer

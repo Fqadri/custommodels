@@ -52,6 +52,7 @@ def get_llama_model_using_weights(instructionfinetuned: bool = False) -> tuple[L
         )
     
     model = Llama2Model(LLAMA2_CONFIG_7B)
+    
     load_weights_into_llama(model, LLAMA2_CONFIG_7B, weight_file)
     return model, tokenizer
 
