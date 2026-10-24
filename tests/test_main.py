@@ -6,15 +6,15 @@ import pytest
 import torch
 
 from common.generation import generate_text_from_inputsample_with_sampling
+from gpt2.model import _12_gpt2model as demo
 from gpt2.model import gpt2_tokenizer
-from gpt2.model import main as demo
 from gpt2.model._11_transformerblock import TransformerBlock
 from gpt2.model._12_gpt2model import GPT2Model
 
 
 def test_import_does_not_run_demo() -> None:
     result = subprocess.run(
-        [sys.executable, "-c", "import gpt2.model.main"],
+        [sys.executable, "-c", "import gpt2.model._12_gpt2model"],
         capture_output=True,
         text=True,
         check=True,
@@ -23,7 +23,7 @@ def test_import_does_not_run_demo() -> None:
 
 
 @pytest.mark.parametrize("dtype", [None, torch.bfloat16, torch.float64])
-def test_main_generates_reproducible_examples(
+def test_raw_model_generates_reproducible_examples(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     dtype: torch.dtype | None,
@@ -48,14 +48,17 @@ def test_main_generates_reproducible_examples(
     model_factory = Mock(wraps=demo.GPT2Model)
     monkeypatch.setattr(demo, "GPT2Model", model_factory)
 
-    main_kwargs = {} if dtype is None else {"dtype": dtype}
-    demo.main(**main_kwargs)
+    expected_dtype = torch.float32 if dtype is None else dtype
+    if dtype is None:
+        demo.run_gpt2_model_raw()
+    else:
+        demo.run_gpt2_model_raw(dtype=dtype)
     output = capsys.readouterr().out
 
     model_factory.assert_called_once_with(
         demo.GPT2_CONFIG_124M,
         debug=False,
-        dtype=torch.float32 if dtype is None else dtype,
+        dtype=expected_dtype,
     )
     get_encoding.assert_called_once_with("gpt2")
     assert tokenizer.encode.call_count == 3
@@ -64,7 +67,7 @@ def test_main_generates_reproducible_examples(
         assert call.kwargs == {"allowed_special": {"<|endoftext|>"}}
 
     sequences = [call.args[0] for call in tokenizer.decode.call_args_list]
-    assert [len(tokens) for tokens in sequences] == [14, 14, 19]
+    assert [len(tokens) for tokens in sequences] == [19, 19, 19]
     assert sequences[0] == sequences[1]
     for tokens in sequences:
         assert tokens[:4] == [1, 2, 3, 4]
@@ -73,8 +76,22 @@ def test_main_generates_reproducible_examples(
     assert output.count("Generated text:\n") == 2
     assert output.count("Generated text with sampling:\n") == 1
 
-    demo.main(**main_kwargs)
+    demo.run_gpt2_model_raw(dtype=expected_dtype)
     assert capsys.readouterr().out == output
+
+    tokenizer.reset_mock()
+    demo.run_gpt2_model_raw(
+        dtype=expected_dtype,
+        prompt="Hello world",
+        max_new_tokens=3,
+    )
+    assert tokenizer.encode.call_count == 3
+    for call in tokenizer.encode.call_args_list:
+        assert call.args == ("Hello world",)
+        assert call.kwargs == {"allowed_special": {"<|endoftext|>"}}
+    custom_sequences = [call.args[0] for call in tokenizer.decode.call_args_list]
+    assert [len(tokens) for tokens in custom_sequences] == [7, 7, 7]
+    assert custom_sequences[0] == custom_sequences[1]
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float64])

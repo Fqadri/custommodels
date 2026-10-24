@@ -45,23 +45,24 @@ class CausalAttention(nn.Module):
         context_vector = attn_weights @ values 
 
         return context_vector
-    
-torch.manual_seed(123)  
 
-# Using 3 dimensions for simplicity.
-inputs = torch.tensor([
-    [0.43, 0.15, 0.89],   #Your
-    [0.55, 0.87, 0.66],   #journey
-    [0.57, 0.85, 0.64],   #starts
-    [0.22, 0.58, 0.33],   #with
-    [0.77, 0.25, 0.10],   #one
-    [0.05, 0.80, 0.55]    #step
-])
+def run_causal_attention():
+    torch.manual_seed(123)  
 
-batchedInputs = torch.stack([inputs, inputs], dim=0)  # Create a batch of 2 input sequences
+    # Using 3 dimensions for simplicity.
+    inputs = torch.tensor([
+        [0.43, 0.15, 0.89],   #Your
+        [0.55, 0.87, 0.66],   #journey
+        [0.57, 0.85, 0.64],   #starts
+        [0.22, 0.58, 0.33],   #with
+        [0.77, 0.25, 0.10],   #one
+        [0.05, 0.80, 0.55]    #step
+    ])
 
-ca = CausalAttention(3, 3, context_length=6, dropout=0.5) 
-context_vector = ca(batchedInputs)
+    batchedInputs = torch.stack([inputs, inputs], dim=0)  # Create a batch of 2 input sequences
 
-print("Context Vector for Batched Inputs:\n", context_vector)
-print("Shape of Context Vector:", context_vector.shape)  # Should be (batch_size, num_tokens, dim_out)
+    ca = CausalAttention(3, 3, context_length=6, dropout=0.5) 
+    context_vector = ca(batchedInputs)
+
+    print("Context Vector for Batched Inputs:\n", context_vector)
+    print("Shape of Context Vector:", context_vector.shape)  # Should be (batch_size, num_tokens, dim_out)

@@ -4,24 +4,15 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from common.generation import generate_text_from_inputsample_with_sampling
-from common.tokenization import text_to_token_ids, token_ids_to_text
-
-from ..model._12_gpt2model import GPT2Model
 from ..model.gpt2_tokenizer import GPT2Tokenizer
-from ..save_load_model._3_loadopenaiweights import load_weights_into_gpt
-from ..save_load_model.gpt_download import DEFAULT_MODELS_DIR, download_and_load_gpt2
-from ._1_rawdataandpromptformatconcept import DEFAULT_DATA_PATH, format_input, load_data
 
-MODEL_CONFIGS = {
-    "124M": {"dim_model": 768, "num_heads": 12, "num_layers": 12},
-    "355M": {"dim_model": 1024, "num_heads": 16, "num_layers": 24},
-    "774M": {"dim_model": 1280, "num_heads": 20, "num_layers": 36},
-    "1558M": {"dim_model": 1600, "num_heads": 25, "num_layers": 48},
-}
+from ._1_prompt_data_format import (
+    DEFAULT_DATA_PATH,
+    format_input_to_alpaca_prompt,
+    load_data,
+)
 
 # Here we will go over preparing training dataset for supervised instruction finetuning and generate response using pretrained model.
-
 
 # This class takes in the raw data entries, formats them into prompt style format for the model and pretokenizes them.
 class InstructionDataset(Dataset):
@@ -30,7 +21,7 @@ class InstructionDataset(Dataset):
         self.encoded_texts = []
         # for each raw data entry, format it into prompty style format (here Alpaca) and then tokenize it.
         for entry in data:
-            instruction_plus_input = format_input(entry)
+            instruction_plus_input = format_input_to_alpaca_prompt(entry)
             response = f"\n\n### Response:\n{entry['output']}"
             full_text = instruction_plus_input + response
             self.encoded_texts.append(
@@ -99,42 +90,6 @@ def custom_collate(
     targets_tensor = torch.stack(targets_list).to(device)
     return inputs_tensor, targets_tensor
 
-
-def get_pretrained_model(
-    model_size: str, models_dir: str | Path = DEFAULT_MODELS_DIR
-) -> GPT2Model:
-    if model_size not in MODEL_CONFIGS:
-        raise ValueError(
-            f"Unknown model size {model_size!r}; choose from {tuple(MODEL_CONFIGS)}."
-        )
-    BASE_CONFIG = {
-        "vocab_size": 50257,
-        "context_length": 1024,
-        "drop_rate": 0.0,
-        "qkv_bias": True,
-    }
-
-    BASE_CONFIG.update(MODEL_CONFIGS[model_size])
-    print(f"Loading GPT-2 model weights for {model_size}...")
-    settings, params = download_and_load_gpt2(model_size, models_dir=models_dir)
-    expected = {
-        "n_vocab": BASE_CONFIG["vocab_size"],
-        "n_ctx": BASE_CONFIG["context_length"],
-        "n_embd": BASE_CONFIG["dim_model"],
-        "n_head": BASE_CONFIG["num_heads"],
-        "n_layer": BASE_CONFIG["num_layers"],
-    }
-    if any(settings.get(key) != value for key, value in expected.items()):
-        raise ValueError(
-            f"Checkpoint settings do not match GPT-2 {model_size}: {settings}"
-        )
-
-    model = GPT2Model(BASE_CONFIG)
-    load_weights_into_gpt(model, params)
-
-    return model.eval()
-
-
 def create_train_val_test_dataloaders(
     data, batch_size, tokenizer, device, allowed_max_length=1024, num_workers=0
 ):
@@ -168,7 +123,7 @@ def create_train_val_test_dataloaders(
     collate_fn = partial(
         custom_collate,
         allowed_max_length=allowed_max_length,
-        pad_token_id=tokenizer.eot_token,
+        pad_token_id=tokenizer.eot_token,  #PAD token is EOT/EOS token in GPT2.
         device=device,
     )
 
@@ -204,7 +159,6 @@ def create_train_val_test_dataloaders(
 
     return train_data, val_data, test_data, train_loader, val_loader, test_loader
 
-
 def prepare_dataset(
     data_path: str | Path = DEFAULT_DATA_PATH,
     batch_size: int = 8,
@@ -236,8 +190,7 @@ def prepare_dataset(
             f"{name} batch: inputs={tuple(inputs.shape)}, targets={tuple(targets.shape)}"
         )
 
-
-def main() -> None:
+def print_train_val_test_dataset() -> None:
 
     torch.manual_seed(123)
 
@@ -268,50 +221,19 @@ def main() -> None:
         )
     )
 
-    print(
-        f"Train size: {len(train_data)}, Test size: {len(test_data)}, Validation size: {len(val_data)}"
-    )
+    print(f"Train size: {len(train_data)}, Test size: {len(test_data)}, Validation size: {len(val_data)}")
 
     for dset, name in zip(
         [train_data, test_data, val_data], ["Train", "Test", "Validation"]
     ):
-        print(
-            f"\n{name} Dataset Example Entry:\n", dset[0]
-        )  # Print the first entry of each dataset split.
+        print(f"\n{name} Dataset Example Entry:\n", dset[0])
 
     print("\nTrain Loader:")
     for inputs, targets in train_loader:
-        print(
-            inputs.shape, targets.shape
-        )  # Should print (batch_size, sequence_length) for both inputs and targets. Sequence length may vary due to padding.
+        # Should print (batch_size, sequence_length) for both inputs and targets. Sequence length may vary due to padding.
+        print(inputs.shape, targets.shape)  
 
-    # Example of loading pretrained model and generating text.
-    print("\nGetting Pretrained Model:")
-    CHOOSE_MODEL = "355M"
-    model = get_pretrained_model(CHOOSE_MODEL)
-    model.to(device).eval()
-
-    input_text = format_input(
-        val_data[0]
-    )  # Format the first entry of validation data into prompt style format.
+    input_text = format_input_to_alpaca_prompt(val_data[0])  
+    
+    # Format the first entry of validation data into prompt style format.
     print("Input text:\n", input_text)
-    token_ids = generate_text_from_inputsample_with_sampling(
-        model,
-        idx=text_to_token_ids(input_text, tokenizer).to(device),
-        max_new_tokens=35,
-        context_size=1024,
-        eos_id=50256,  # EOS token id for GPT-2. Same as pad_token_id.
-    )
-
-    generated_text = token_ids_to_text(token_ids, tokenizer)
-    print("------------Generated text--------------:\n", generated_text)
-
-    # Extract the response part from the generated text.
-    # When evaluating model's performance on specific task, we want to focus solely on the model's generated response and not the entire input prompt.
-    # Notice without instruction fine-tuning, model often just parrots back the input instruction instead of generating a meaningful response.
-    response_text = generated_text[len(input_text) :]
-    print("-----------Response text---------------:\n", response_text)
-
-
-if __name__ == "__main__":
-    main()

@@ -6,8 +6,8 @@ import requests
 import torch
 
 from gpt2.model._12_gpt2model import GPT2Model
-from gpt2.save_load_model import _3_loadopenaiweights as weights
-from gpt2.save_load_model import gpt_download as downloads
+from gpt2.save_load_model import _2_gpt2_download_modeldata as downloads
+from gpt2.save_load_model import _3_load_gpt2_modelweights as weights
 
 
 def test_checkpoint_weights_map_to_custom_model():
@@ -46,7 +46,14 @@ def test_checkpoint_weights_map_to_custom_model():
             }
         ],
     }
-    weights.load_weights_into_gpt(model, params)
+    hyperparameters = {
+        "n_vocab": config["vocab_size"],
+        "n_ctx": config["context_length"],
+        "n_embd": config["dim_model"],
+        "n_head": config["num_heads"],
+        "n_layer": config["num_layers"],
+    }
+    weights.load_weights_into_gpt(model, params, hyperparameters=hyperparameters)
     block = model.transformer_blocks[0]
     checkpoint_block = params["blocks"][0]
     for index, layer in enumerate(
@@ -102,7 +109,7 @@ def test_cached_weights_do_not_contact_the_network(tmp_path, monkeypatch):
     destination.write_bytes(b"cached")
     get = Mock(side_effect=AssertionError("Unexpected network request"))
     monkeypatch.setattr(downloads.requests, "get", get)
-    downloads.download_file("https://example.test/weights", destination)
+    downloads.download_gpt2_modeldata("https://example.test/weights", destination)
     get.assert_not_called()
 
 
@@ -114,15 +121,17 @@ def test_download_urls_and_local_checkpoint_paths(tmp_path, monkeypatch):
         if destination.name == "hparams.json":
             destination.write_text('{"n_layer": 1}', encoding="utf-8")
 
-    load = Mock(return_value={"blocks": []})
-    monkeypatch.setattr(downloads, "download_file", download)
-    monkeypatch.setattr(downloads, "load_gpt2_params_from_tf_ckpt", load)
-    settings, params = downloads.download_and_load_gpt2("124M", tmp_path)
+    reader = Mock()
+    reader.get_variable_to_shape_map.return_value = {}
+    load = Mock(return_value=reader)
+    monkeypatch.setattr(downloads, "download_gpt2_modeldata", download)
+    monkeypatch.setattr(downloads.tf.train, "load_checkpoint", load)
+    settings, params = downloads.get_gpt2_pretrained_modeldata("124M", tmp_path)
     assert settings == {"n_layer": 1}
-    assert params == {"blocks": []}
+    assert params == {"blocks": [{}]}
     assert len(seen_urls) == 14
     assert all("\\" not in url and "/124M/" in url for url in seen_urls)
-    load.assert_called_once_with(str(tmp_path / "124M" / "model.ckpt"), settings)
+    load.assert_called_once_with(str(tmp_path / "124M" / "model.ckpt"))
 
 
 def response_with_chunks(chunks, size):
@@ -140,7 +149,7 @@ def test_download_uses_backup_and_publishes_complete_file(
     get = Mock(side_effect=[requests.ConnectionError("primary unavailable"), response])
     monkeypatch.setattr(downloads.requests, "get", get)
     destination = tmp_path / "weights"
-    downloads.download_file(
+    downloads.download_gpt2_modeldata(
         "https://primary.test/file", destination, "https://backup.test/file"
     )
     assert destination.read_bytes() == b"abc"
@@ -154,7 +163,7 @@ def test_failed_download_raises_and_removes_partial_file(tmp_path, monkeypatch):
     monkeypatch.setattr(downloads.requests, "get", Mock(return_value=response))
     destination = tmp_path / "weights"
     with pytest.raises(requests.exceptions.ChunkedEncodingError):
-        downloads.download_file(
+        downloads.download_gpt2_modeldata(
             "https://primary.test/file", destination, "https://backup.test/file"
         )
     assert not destination.exists()

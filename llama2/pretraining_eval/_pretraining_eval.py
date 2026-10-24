@@ -15,8 +15,8 @@ from common.pretraining import (
 )
 from common.tokenization import text_to_token_ids, token_ids_to_text
 
-from ..llama2model import Llama2Model
-from ..llamatokenizer import LlamaTokenizer
+from ..model.llama2_model import Llama2Model
+from ..model.llama2_tokenizer import LlamaTokenizer
 
 DEFAULT_DATA_PATH = Path(__file__).resolve().with_name("the-verdict.txt")
 

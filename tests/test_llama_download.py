@@ -2,7 +2,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from llama2 import download_load_weights as downloader
+from llama2.model.llama2_model import Llama2Model
+from llama2.model.llama2_tokenizer import LlamaTokenizer
+from llama2.save_load_model import load_llama2_modelweights as downloader
 
 
 @pytest.mark.parametrize("instructionfinetuned", [False, True])
@@ -17,8 +19,8 @@ def test_download_uses_configured_hf_cache_without_loading_model(
     tokenizer = Mock(side_effect=AssertionError("Downloading must not load a tokenizer"))
     monkeypatch.setattr(downloader.constants, "HF_HUB_CACHE", str(cache_dir))
     monkeypatch.setattr(downloader, "snapshot_download", download)
-    monkeypatch.setattr(downloader, "Llama2Model", model)
-    monkeypatch.setattr(downloader, "LlamaTokenizer", tokenizer)
+    monkeypatch.setattr(Llama2Model, "__init__", model)
+    monkeypatch.setattr(LlamaTokenizer, "__init__", tokenizer)
 
     if instructionfinetuned:
         tokenizer_path, checkpoint_path = downloader.download_llama2(

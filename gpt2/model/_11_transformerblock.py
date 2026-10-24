@@ -44,7 +44,7 @@ class TransformerBlock(SharedTransformerBlock):
         )
 
 
-if __name__ == "__main__":
+def run_transformer_block():
     # Example usage
     GPT2_CONFIG_124M = {
         "vocab_size": 50257,  # Size of the vocabulary.

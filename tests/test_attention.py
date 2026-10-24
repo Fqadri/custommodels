@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 from common.multi_head_attention import MultiHeadAttention
 from gpt2.model._6_multiHeadAttention import MultiHeadAttention as DemoAttention
-from llama2.rope import RotaryEmbedding
+from llama2.model.rope import RotaryEmbedding
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])

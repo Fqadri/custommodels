@@ -2,7 +2,7 @@ from common.multi_head_attention import MultiHeadAttention
 from common.transformer_block import TransformerBlock as SharedTransformerBlock
 
 from .feedforward_swiglu import FeedForward
-from .rmsnormalization import RMSNorm
+from .rms_normalization import RMSNorm
 from .rope import RotaryEmbedding
 
 

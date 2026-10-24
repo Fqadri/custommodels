@@ -11,7 +11,7 @@ from ..model.gpt2_tokenizer import GPT2Tokenizer
 from ..pretraining_eval._2_pretraining_eval import DEFAULT_DATA_PATH
 
 
-def main() -> None:
+def run_save_load_concept() -> None:
     config = {
         "vocab_size": 50257,
         "dim_model": 768,
@@ -71,7 +71,3 @@ def main() -> None:
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=0.1)
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     model.train()
-
-
-if __name__ == "__main__":
-    main()

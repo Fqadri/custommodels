@@ -22,7 +22,7 @@ class LayerNorm(nn.Module):
         return self.scale * normalized_x + self.shift # Scale and shift the normalized output
     
 
-if __name__ == "__main__":
+def run_layer_normalization():
     torch.manual_seed(123)  # For reproducibility
     batch_example = torch.randn(2, 5) # Example batch of input sequences. Shape 2 X 5 (B X T). 2 input sequences each of length 5 tokens.
 

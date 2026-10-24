@@ -37,7 +37,7 @@ class FeedForward(nn.Module):
         return self.layers(x)
 
 
-if __name__ == "__main__":
+def run_feedforward_gelu():
     # Example usage
     torch.manual_seed(123)  # For reproducibility
     batch_example = torch.randn(1, 2, 768) # Example batch of input sequences. Shape 1 X 2 X 768 (B X T X D). 1 input sequences each of length 2 tokens and 768 dimensions.

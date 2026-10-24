@@ -3,8 +3,8 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-from llama2 import rope as rope_module
-from llama2.rope import RotaryEmbedding, compute_rope, precompute_rope_params
+from llama2.model import rope as rope_module
+from llama2.model.rope import RotaryEmbedding, compute_rope, precompute_rope_params
 
 
 def test_frequencies_and_angles_repeat_for_adjacent_pairs():

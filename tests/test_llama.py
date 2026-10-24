@@ -17,15 +17,15 @@ from common.generation import (
 from common.multi_head_attention import MultiHeadAttention
 from common.tokenization import text_to_token_ids, token_ids_to_text
 from common.transformer_block import TransformerBlock as SharedTransformerBlock
-from llama2 import llamatokenizer
-from llama2 import main as demo
-from llama2.feedforward_swiglu import FeedForward
-from llama2.llama2model import Llama2Model
-from llama2.llamatokenizer import LlamaTokenizer
+from llama2.model import llama2_model as demo
+from llama2.model import llama2_tokenizer
+from llama2.model.feedforward_swiglu import FeedForward
+from llama2.model.llama2_model import Llama2Model
+from llama2.model.llama2_tokenizer import LlamaTokenizer
+from llama2.model.rms_normalization import RMSNorm
+from llama2.model.rope import RotaryEmbedding
+from llama2.model.transformer_block import TransformerBlock
 from llama2.pretraining_eval import _pretraining_eval as pretraining_demo
-from llama2.rmsnormalization import RMSNorm
-from llama2.rope import RotaryEmbedding
-from llama2.transformer_block import TransformerBlock
 
 
 @pytest.fixture(scope="module")
@@ -94,7 +94,7 @@ def test_tokenizer_rejects_missing_special_tokens(monkeypatch):
     processor.bos_id.return_value = -1
     processor.eos_id.return_value = 2
     monkeypatch.setattr(
-        llamatokenizer.spm, "SentencePieceProcessor", Mock(return_value=processor)
+        llama2_tokenizer.spm, "SentencePieceProcessor", Mock(return_value=processor)
     )
     with pytest.raises(ValueError, match="BOS and EOS"):
         LlamaTokenizer("tokenizer.model")

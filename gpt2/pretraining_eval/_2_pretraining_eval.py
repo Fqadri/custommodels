@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import torch
@@ -18,7 +19,6 @@ from ..model._12_gpt2model import GPT2Model
 from ..model.gpt2_tokenizer import GPT2Tokenizer
 
 DEFAULT_DATA_PATH = Path(__file__).resolve().with_name("the-verdict.txt")
-
 
 # Example usage
 # Training and Validation Loss Concept. We compute training loss while training and then we compute validation loss on unseen data to see how well the model is doing.
@@ -68,9 +68,12 @@ def demonstrate_training_validation_loss() -> None:
     print(f"\nTraining Loss: {train_loss:.4f}")
     print(f"Validation Loss: {val_loss:.4f}\n")
 
-
 # Example usage of the model for training and evaluation.
-def main() -> None:
+def run_pretraining_eval_gpt2(
+    data_path: str | Path = DEFAULT_DATA_PATH,
+    max_new_tokens: int = 15,
+    prompt: str = "Every effort moves you",
+) -> None:
 
     GPT2_CONFIG_124M = {
         "vocab_size": 50257,
@@ -94,14 +97,15 @@ def main() -> None:
         weight_decay=1e-1,  # helps prevent overfitting by penalizing large weights.
     )
 
+    print("start time:", time.strftime("%Y-%m-%d %H:%M:%S"), "Starting pretraining evaluation for GPT-2 model...")
+
     # Train Model for 10 epochs.
     num_epochs = 10
-    start_context = "Every effort moves you"
     tokenizer = GPT2Tokenizer()
     train_losses, val_losses, tokens_seen, tokenizer = train_model(
-        model, GPT2_CONFIG_124M["context_length"], optimizer, num_epochs, start_context,
+        model, GPT2_CONFIG_124M["context_length"], optimizer, num_epochs, prompt,
         tokenizer=tokenizer,
-        data_path=DEFAULT_DATA_PATH,
+        data_path=data_path,
     )
     device = next(model.parameters()).device
 
@@ -110,12 +114,14 @@ def main() -> None:
     )  # Create a tensor with evenly spaced values from 0 to num_epochs
     plot_losses(epochs_seen, tokens_seen, train_losses, val_losses)
 
+    print("end time:", time.strftime("%Y-%m-%d %H:%M:%S"), "Finished training. Generating text with the pretrained model...")
+
     # Run inference with the trained model.
     model.eval()
     token_ids = generate_text_from_inputsample(
         model,
-        text_to_token_ids(start_context, tokenizer).to(device),
-        max_new_tokens=15,
+        text_to_token_ids(prompt, tokenizer).to(device),
+        max_new_tokens=max_new_tokens,
         context_size=GPT2_CONFIG_124M["context_length"],
     )
 
@@ -125,8 +131,8 @@ def main() -> None:
     # Using sampling to generate text after model training.
     token_ids = generate_text_from_inputsample_with_sampling(
         model,
-        text_to_token_ids(start_context, tokenizer).to(device),
-        max_new_tokens=15,
+        text_to_token_ids(prompt, tokenizer).to(device),
+        max_new_tokens=max_new_tokens,
         context_size=GPT2_CONFIG_124M["context_length"],
         temperature=0.5,  # Higher the temperature, more random the output. Lower the temperature, more deterministic the output.
         top_k=25,
@@ -136,7 +142,3 @@ def main() -> None:
     print(
         "Generated text with sampling:\n", generated_text.replace("\n", " ")
     )  # compact display by removing newlines
-
-
-if __name__ == "__main__":
-    main()

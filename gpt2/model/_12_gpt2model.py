@@ -2,6 +2,9 @@
 import torch
 import torch.nn as nn
 
+from common.generation import generate_text_from_inputsample, generate_text_from_inputsample_with_sampling
+from common.tokenization import text_to_token_ids, token_ids_to_text
+
 from .gpt2_tokenizer import GPT2Tokenizer
 from ._11_transformerblock import TransformerBlock
 from . import _8_layernormalization as ln
@@ -86,8 +89,7 @@ GPT2_CONFIG_124M = {
     "qkv_bias": False       # Whether to include bias terms in Q, K, V projections.
 }
 
-
-def print_model_details():
+def print_gpt2_model_details():
     
     torch.manual_seed(123)  # For reproducibility
     tokenizer = GPT2Tokenizer()
@@ -119,3 +121,35 @@ def print_model_details():
     print("Total size of the model: {total_size_mb:.2f} MB".format(total_size_mb = total_params * 4 / (1024*1024))) # Assuming each parameter is 32-bit (4 bytes) floats.
 
     return
+
+def run_gpt2_model_raw(
+    dtype: torch.dtype = torch.float32,
+    prompt: str = "Every effort moves you",
+    max_new_tokens: int = 15,
+) -> None:
+    torch.manual_seed(123)
+    tokenizer = GPT2Tokenizer()
+    model = GPT2Model(GPT2_CONFIG_124M, debug=False, dtype=dtype)
+    model.eval()
+
+    # Greedy decoding produces the same result for both runs.
+    for _ in range(2):
+        token_ids = generate_text_from_inputsample(
+            model,
+            text_to_token_ids(prompt, tokenizer),
+            max_new_tokens=max_new_tokens,
+            context_size=GPT2_CONFIG_124M["context_length"],
+        )
+        generated_text = token_ids_to_text(token_ids, tokenizer)
+        print("Generated text:\n", generated_text)
+
+    token_ids = generate_text_from_inputsample_with_sampling(
+        model,
+        text_to_token_ids(prompt, tokenizer),
+        max_new_tokens=max_new_tokens,
+        context_size=GPT2_CONFIG_124M["context_length"],
+        temperature=0.5,
+        top_k=25,
+    )
+    generated_text = token_ids_to_text(token_ids, tokenizer)
+    print("Generated text with sampling:\n", generated_text)

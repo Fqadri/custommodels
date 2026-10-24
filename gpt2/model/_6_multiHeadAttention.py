@@ -3,7 +3,7 @@ import torch
 
 from common.multi_head_attention import MultiHeadAttention
 
-if __name__ == "__main__":
+def run_multihead_attention():
     # Example usage:
     torch.manual_seed(123)  # For reproducibility
 

@@ -77,35 +77,36 @@ class DummyLayerNorm(nn.Module):
         return x
     
 
-GPT_CONFIG_124M = {
-    "vocab_size": 50257,  # Size of the vocabulary.
-    "dim_model": 768,    # Dimension of the model (d_model).
-    "num_layers": 12,    # Number of transformer layers or blocks.
-    "num_heads": 12,     # Number of attention heads per layer.
-    "context_length": 1024,  # Maximum context length (number of tokens in input sequence).
-    "drop_rate": 0.1,     # Dropout rate to prevent overfitting.
-    "qkv_bias": False       # Whether to include bias terms in Q, K, V projections.
-}
+def run_dummy_gpt_model():
+    GPT_CONFIG_124M = {
+        "vocab_size": 50257,  # Size of the vocabulary.
+        "dim_model": 768,    # Dimension of the model (d_model).
+        "num_layers": 12,    # Number of transformer layers or blocks.
+        "num_heads": 12,     # Number of attention heads per layer.
+        "context_length": 1024,  # Maximum context length (number of tokens in input sequence).
+        "drop_rate": 0.1,     # Dropout rate to prevent overfitting.
+        "qkv_bias": False       # Whether to include bias terms in Q, K, V projections.
+    }
 
-# Input sequence length or batch size
-B = 1
-batch = []
-tokenizer = GPT2Tokenizer()
+    # Input sequence length or batch size
+    B = 1
+    batch = []
+    tokenizer = GPT2Tokenizer()
 
-txt1 = "Every effort moves you"
-txt2 = "Every day holds a"
+    txt1 = "Every effort moves you"
+    txt2 = "Every day holds a"
 
-batch.append(torch.tensor(tokenizer.encode(txt1)))
+    batch.append(torch.tensor(tokenizer.encode(txt1)))
 
-if B == 2:
-    batch.append(torch.tensor(tokenizer.encode(txt2)))
+    if B == 2:
+        batch.append(torch.tensor(tokenizer.encode(txt2)))
 
-batch = torch.stack(batch, dim=0)  # Shape (B, num_tokens)
-print("Input batch:", batch)  # Should print (B, num_tokens)
+    batch = torch.stack(batch, dim=0)  # Shape (B, num_tokens)
+    print("Input batch:", batch)  # Should print (B, num_tokens)
 
 
-torch.manual_seed(123)  # For reproducibility
-model = DummyGPTModel(GPT_CONFIG_124M)  # Instantiate the model with the configuration.
-logits = model(batch)  # Forward pass through the model to get logits.
-print("Logits shape:", logits.shape)  # Should print (B, num_tokens - T, vocab_size)
-print("Logits:", logits)  # Print the logits.
+    torch.manual_seed(123)  # For reproducibility
+    model = DummyGPTModel(GPT_CONFIG_124M)  # Instantiate the model with the configuration.
+    logits = model(batch)  # Forward pass through the model to get logits.
+    print("Logits shape:", logits.shape)  # Should print (B, num_tokens - T, vocab_size)
+    print("Logits:", logits)  # Print the logits.

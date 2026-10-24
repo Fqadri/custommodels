@@ -31,19 +31,20 @@ class SelfAttention_v1(nn.Module):
         context_vector = attn_weights @ values  # Compute context vector
         return context_vector
 
-# Set random seed for reproducibility
-torch.manual_seed(123)
+def run_self_attention_v1():
+    # Set random seed for reproducibility
+    torch.manual_seed(123)
 
-# Using 1 input sequence with 3 dimensions for simplicity.
-# Input sequence is "Your journey starts with one step" which has 6 tokens.
-inputs = torch.tensor([
-    [0.43, 0.15, 0.89],   #Your
-    [0.55, 0.87, 0.66],   #journey
-    [0.57, 0.85, 0.64],   #starts
-    [0.22, 0.58, 0.33],   #with
-    [0.77, 0.25, 0.10],   #one
-    [0.05, 0.80, 0.55]    #step
-])
+    # Using 1 input sequence with 3 dimensions for simplicity.
+    # Input sequence is "Your journey starts with one step" which has 6 tokens.
+    inputs = torch.tensor([
+        [0.43, 0.15, 0.89],   #Your
+        [0.55, 0.87, 0.66],   #journey
+        [0.57, 0.85, 0.64],   #starts
+        [0.22, 0.58, 0.33],   #with
+        [0.77, 0.25, 0.10],   #one
+        [0.05, 0.80, 0.55]    #step
+    ])
 
-sa_v1 = SelfAttention_v1(3, 3)  # Create an instance of the SelfAttention class with input and output dimensions of 3
-print(sa_v1(inputs))
+    sa_v1 = SelfAttention_v1(3, 3)  # Create an instance of the SelfAttention class with input and output dimensions of 3
+    print(sa_v1(inputs))

@@ -3,9 +3,6 @@ from pathlib import Path
 import torch
 from huggingface_hub import constants, snapshot_download
 
-from llama2.llama2model import Llama2Model
-from llama2.llamatokenizer import LlamaTokenizer
-
 # returns path to the tokenizer and checkpoint files
 def download_llama2(instructionfinetuned: bool = False) -> tuple[Path, Path]:
     """Download files and return (tokenizer_path, checkpoint_path)."""

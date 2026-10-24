@@ -1,16 +1,6 @@
 import numpy as np
 import torch
 
-from common.generation import generate_text_from_inputsample_with_sampling
-from common.tokenization import text_to_token_ids, token_ids_to_text
-
-from ..model._12_gpt2model import GPT2Model
-from ..model.gpt2_tokenizer import GPT2Tokenizer
-from .gpt_download import DEFAULT_MODELS_DIR, download_and_load_gpt2
-
-# This file demostrates downloading weights from OpenAI's GPT-2 and loading them into a custom GPT-2 implementation.
-
-
 def assign(left, right):
     if left is None:
         raise ValueError("Pretrained GPT-2 weights require a model with qkv_bias=True.")
@@ -22,12 +12,39 @@ def assign(left, right):
         requires_grad=left.requires_grad,
     )
 
+def validate_model_architecture_settings(gpt, hyperparameters) -> None:
+    architecture = {
+        "n_vocab": gpt.token_embedding.num_embeddings,
+        "n_ctx": gpt.position_embedding.num_embeddings,
+        "n_embd": gpt.token_embedding.embedding_dim,
+        "n_layer": len(gpt.transformer_blocks),
+    }
 
-def load_weights_into_gpt(gpt, params):
+    for name, actual in architecture.items():
+        expected = hyperparameters.get(name)
+        if expected != actual:
+            raise ValueError(
+                f"{name} mismatch: checkpoint={expected}, model={actual}"
+            )
+
+    expected_heads = hyperparameters["n_head"]
+    for index, block in enumerate(gpt.transformer_blocks):
+        actual_heads = block.attention.num_heads
+        if expected_heads != actual_heads:
+            raise ValueError(
+                f"Layer {index} n_head mismatch: "
+                f"checkpoint={expected_heads}, model={actual_heads}"
+            )
+
+def load_weights_into_gpt(gpt, params, hyperparameters):
+    
+    validate_model_architecture_settings(gpt, hyperparameters)
+    
     if len(params["blocks"]) != len(gpt.transformer_blocks):
         raise ValueError(
             "Checkpoint and model have different numbers of transformer blocks."
         )
+    
     # Load positional and input token embedding weights.
     gpt.position_embedding.weight = assign(gpt.position_embedding.weight, params["wpe"])
     gpt.token_embedding.weight = assign(gpt.token_embedding.weight, params["wte"])
@@ -113,60 +130,3 @@ def load_weights_into_gpt(gpt, params):
     )  # Final layer norm shift (bias)
     # Load output layer weights. Note that output layer weights are tied to the input token embedding weights (weight tying).
     gpt.output_layer.weight = gpt.token_embedding.weight
-
-
-def main() -> None:
-    GPT2_CONFIG_124M = {
-        "vocab_size": 50257,  # Size of the vocabulary.
-        "dim_model": 768,  # Dimension of the model (d_model).
-        "num_layers": 12,  # Number of transformer layers or blocks.
-        "num_heads": 12,  # Number of attention heads per layer.
-        "context_length": 1024,  # Maximum context length (number of tokens in input sequence).
-        "drop_rate": 0.1,  # Dropout rate to prevent overfitting.
-        "qkv_bias": False,  # Whether to include bias terms in Q, K, V projections.
-    }
-
-    model_configs = {
-        "gpt-small (124M)": {"dim_model": 768, "num_heads": 12, "num_layers": 12},
-        "gpt-medium (355M)": {"dim_model": 1024, "num_heads": 16, "num_layers": 24},
-        "gpt-large (774M)": {"dim_model": 1280, "num_heads": 20, "num_layers": 36},
-        "gpt-xl (1558M)": {"dim_model": 1600, "num_heads": 25, "num_layers": 48},
-    }
-
-    # Update model hyperparameters based on the selected model size
-    model_name = "gpt-small (124M)"
-    NEW_CONFIG = GPT2_CONFIG_124M.copy()
-    NEW_CONFIG.update(model_configs[model_name])
-    NEW_CONFIG.update(
-        {"context_length": 1024}
-    )  # Open AI GPT-2 uses 1024 context length for all model sizes.
-    NEW_CONFIG.update(
-        {"qkv_bias": True}
-    )  # Open AI GPT-2 uses qkv_bias=True for all model sizes.
-
-    gpt = GPT2Model(NEW_CONFIG)
-    gpt.eval()
-
-    _settings, params = download_and_load_gpt2("124M", models_dir=DEFAULT_MODELS_DIR)
-    load_weights_into_gpt(gpt, params)
-
-    torch.manual_seed(123)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    gpt.to(device)
-    start_context = "Every effort moves you"
-    tokenizer = GPT2Tokenizer()
-    token_ids = generate_text_from_inputsample_with_sampling(
-        gpt,
-        text_to_token_ids(start_context, tokenizer).to(device),
-        max_new_tokens=25,
-        context_size=GPT2_CONFIG_124M["context_length"],
-        temperature=1.5,  # Higher the temperature, more random the output. Lower the temperature, more deterministic the output.
-        top_k=50,
-    )
-
-    generated_text = token_ids_to_text(token_ids, tokenizer)
-    print("Generated text with sampling:\n", generated_text)
-
-
-if __name__ == "__main__":
-    main()

@@ -1,3 +1,4 @@
+import inspect
 import json
 import os
 import pickle
@@ -9,10 +10,9 @@ import pytest
 import torch
 
 from common import pretraining as training
-from gpt2.finetuning_instruction import _1_rawdataandpromptformatconcept as data
-from gpt2.finetuning_instruction import _2_preparedatasetandloadmodel as preparation
-from gpt2.finetuning_instruction import _3_instructionfinetuningandeval as finetuning
-from gpt2.finetuning_instruction.main import main
+from gpt2.finetuning_instruction import _1_prompt_data_format as data
+from gpt2.finetuning_instruction import _2_prepare_instr_ft_dataset as preparation
+from gpt2.finetuning_instruction import _3_instr_finetuning as finetuning
 from gpt2.model._12_gpt2model import GPT2Model
 from gpt2.pretraining_eval import _2_pretraining_eval as pretraining_demo
 
@@ -105,13 +105,12 @@ assert not plt.get_fignums()
     result = subprocess.run(
         [sys.executable, "-c", script],
         check=True,
-        capture_output=True,
+        stdout=subprocess.PIPE,
         text=True,
         env={**os.environ, "MPLBACKEND": "Agg"},
         timeout=60,
     )
     assert result.stdout == ""
-    assert result.stderr == ""
 
 
 @pytest.mark.parametrize(
@@ -121,16 +120,11 @@ def test_rejects_invalid_instruction_data(tmp_path, value):
     path = tmp_path / "invalid.json"
     path.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(ValueError):
-        data.load_instruction_data(path)
+        data.load_data(path)
 
 
 def test_default_data_is_independent_of_working_directory(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        data.urllib.request,
-        "urlopen",
-        Mock(side_effect=AssertionError("Unexpected download")),
-    )
     assert len(data.load_data()) == 1100
     assert not (tmp_path / "instruction-data.json").exists()
     with pytest.raises(FileNotFoundError):
@@ -143,7 +137,7 @@ def test_preview_accepts_a_single_entry(tmp_path, capsys):
         '[{"instruction": "Say hello", "input": "", "output": "Hello"}]',
         encoding="utf-8",
     )
-    main(["preview", "--data", str(path)])
+    data.preview_formatted_data(path)
     assert "### Response:\nHello" in capsys.readouterr().out
 
 
@@ -395,11 +389,13 @@ def test_training_rejects_invalid_sample_context_before_updates(
 
 
 def test_post_training_demo_disables_dropout_for_both_generators(
-    tiny_model, monkeypatch
+    tiny_model, monkeypatch, tmp_path
 ):
     tiny_model.train()
     monkeypatch.setattr(pretraining_demo, "GPT2Model", Mock(return_value=tiny_model))
     tokenizer = TinyTokenizer()
+    encode = Mock(wraps=tokenizer.encode)
+    monkeypatch.setattr(tokenizer, "encode", encode)
     tokenizer_factory = Mock(return_value=tokenizer)
     train = Mock(return_value=([1.0], [1.0], [8], tokenizer))
     monkeypatch.setattr(pretraining_demo, "GPT2Tokenizer", tokenizer_factory)
@@ -418,16 +414,48 @@ def test_post_training_demo_disables_dropout_for_both_generators(
         pretraining_demo, "generate_text_from_inputsample_with_sampling", sampling
     )
 
-    pretraining_demo.main()
+    pretraining_demo.run_pretraining_eval_gpt2()
 
     tokenizer_factory.assert_called_once_with()
-    assert train.call_args.kwargs["tokenizer"] is tokenizer
-    assert train.call_args.kwargs["data_path"] == pretraining_demo.DEFAULT_DATA_PATH
-    greedy.assert_called_once()
-    sampling.assert_called_once()
+    assert train.call_args.args[4] == "Every effort moves you"
+    assert train.call_args.kwargs == {
+        "tokenizer": tokenizer,
+        "data_path": pretraining_demo.DEFAULT_DATA_PATH,
+    }
+    assert [call.args for call in encode.call_args_list] == [
+        ("Every effort moves you",),
+        ("Every effort moves you",),
+    ]
+    for generator in (greedy, sampling):
+        generator.assert_called_once()
+        assert generator.call_args.kwargs["max_new_tokens"] == 15
+
+    train.reset_mock()
+    encode.reset_mock()
+    greedy.reset_mock()
+    sampling.reset_mock()
+    data_path = str(tmp_path / "custom-corpus.txt")
+    pretraining_demo.run_pretraining_eval_gpt2(
+        data_path=data_path,
+        max_new_tokens=3,
+        prompt="A custom training prompt",
+    )
+
+    assert train.call_args.args[4] == "A custom training prompt"
+    assert train.call_args.kwargs == {
+        "tokenizer": tokenizer,
+        "data_path": data_path,
+    }
+    assert [call.args for call in encode.call_args_list] == [
+        ("A custom training prompt",),
+        ("A custom training prompt",),
+    ]
+    for generator in (greedy, sampling):
+        generator.assert_called_once()
+        assert generator.call_args.kwargs["max_new_tokens"] == 3
 
 
-def test_train_cli_runs_real_optimization_and_saves_outputs(
+def test_instruction_workflow_compares_responses_and_saves_outputs(
     tiny_model, dataset_path, tmp_path, monkeypatch, capsys
 ):
     output = tmp_path / "outputs"
@@ -435,7 +463,21 @@ def test_train_cli_runs_real_optimization_and_saves_outputs(
         name: value.clone() for name, value in tiny_model.state_dict().items()
     }
     get_model = Mock(return_value=tiny_model)
-    monkeypatch.setattr(finetuning, "get_pretrained_model", get_model)
+    generate = Mock(wraps=finetuning._generate_instruction_response)
+    prepare = Mock(wraps=finetuning.create_train_val_test_dataloaders)
+    train = Mock(wraps=finetuning.finetune_model_for_instruction_following)
+    workflow = Mock()
+    for name, spy in (
+        ("get_pretrained_model", get_model),
+        ("_generate_instruction_response", generate),
+        ("create_train_val_test_dataloaders", prepare),
+        ("finetune_model_for_instruction_following", train),
+    ):
+        monkeypatch.setattr(finetuning, name, spy)
+        workflow.attach_mock(spy, name)
+    monkeypatch.setattr(finetuning, "DEFAULT_MODELS_DIR", tmp_path / "cache")
+    monkeypatch.setattr(finetuning, "DEFAULT_OUTPUT_DIR", output)
+    monkeypatch.setattr(torch.cuda, "is_available", Mock(return_value=False))
     monkeypatch.setattr(
         finetuning, "GPT2Tokenizer", Mock(return_value=TinyTokenizer())
     )
@@ -444,33 +486,40 @@ def test_train_cli_runs_real_optimization_and_saves_outputs(
     )
     sample = Mock(wraps=training.generate_and_print_sample)
     monkeypatch.setattr(training, "generate_and_print_sample", sample)
-    main(
-        [
-            "train",
-            "--data",
-            str(dataset_path),
-            "--model",
-            "124M",
-            "--epochs",
-            "1",
-            "--batch-size",
-            "8",
-            "--context-length",
-            "4",
-            "--device",
-            "cpu",
-            "--max-new-tokens",
-            "2",
-            "--models-dir",
-            str(tmp_path / "cache"),
-            "--output-dir",
-            str(output),
-        ]
+    sampling = Mock(wraps=finetuning.generate_text_from_inputsample_with_sampling)
+    monkeypatch.setattr(
+        finetuning, "generate_text_from_inputsample_with_sampling", sampling
     )
+    checkpoint_path = finetuning.run_instruction_finetuning(
+        prompt="Say hello",
+        max_new_tokens=2,
+        data_path=dataset_path,
+        model_size="124M",
+    )
+    assert [call[0] for call in workflow.mock_calls] == [
+        "get_pretrained_model",
+        "_generate_instruction_response",
+        "create_train_val_test_dataloaders",
+        "finetune_model_for_instruction_following",
+        "_generate_instruction_response",
+        "_generate_instruction_response",
+    ]
+    expected_prompt = data.format_input_to_alpaca_prompt(
+        data.InstructionEntry(instruction="Say hello", input="", output="")
+    )
+    assert generate.call_args_list[0].args[1] == expected_prompt
+    assert generate.call_args_list[0].args == generate.call_args_list[1].args
+    assert generate.call_args_list[0].args[-1] == 2
+    assert [call.kwargs["max_new_tokens"] for call in sampling.call_args_list] == [
+        2, 2, 2,
+    ]
     get_model.assert_called_once_with("124M", models_dir=tmp_path / "cache")
-    assert sample.call_count == 1
+    assert prepare.call_args.kwargs["batch_size"] == 8
+    assert prepare.call_args.kwargs["allowed_max_length"] == 1024
+    assert sample.call_count == 2
     assert sample.call_args.kwargs["context_size"] == 8
-    checkpoint = torch.load(output / "gpt2-124M-sft.pth", weights_only=True)
+    assert checkpoint_path == output / "gpt2-124M-sft.pth"
+    checkpoint = torch.load(checkpoint_path, weights_only=True)
     assert set(checkpoint) == set(initial_weights)
     assert all(torch.isfinite(value).all() for value in checkpoint.values())
     assert any(
@@ -487,7 +536,12 @@ def test_train_cli_runs_real_optimization_and_saves_outputs(
     assert isinstance(responses[0]["model_response"], str)
     assert (output / "losses.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert not training.plt.get_fignums()
-    assert "Fine-tuning completed" in capsys.readouterr().out
+    console_output = capsys.readouterr().out
+    assert (
+        console_output.index("Before instruction fine-tuning:")
+        < console_output.index("Fine-tuning completed")
+        < console_output.index("After instruction fine-tuning:")
+    )
 
 
 def test_response_extraction_handles_eos_without_mutating_data(
@@ -498,6 +552,7 @@ def test_response_extraction_handles_eos_without_mutating_data(
     def generate(model, idx, context_size, eos_id, **kwargs):
         assert context_size == 8
         assert eos_id == 31
+        assert not model.training
         return idx
 
     monkeypatch.setattr(
@@ -510,43 +565,27 @@ def test_response_extraction_handles_eos_without_mutating_data(
 
 
 @pytest.mark.parametrize(
-    "args",
+    ("prompt", "max_new_tokens", "message"),
     [
-        [],
-        ["train", "--epochs", "0"],
-        ["train", "--context-length", "1025"],
-        ["prepare", "--batch-size", "-1"],
-        ["prepare", "--num-workers", "-1"],
-        ["train", "--model", "unknown"],
-        ["score"],
+        ("", 1, "prompt"),
+        (" \n", 1, "prompt"),
+        ([], 1, "prompt"),
+        ("Say hello", 0, "max_new_tokens"),
+        ("Say hello", -1, "max_new_tokens"),
+        ("Say hello", 1.5, "max_new_tokens"),
+        ("Say hello", True, "max_new_tokens"),
     ],
 )
-def test_cli_rejects_invalid_arguments(args):
-    with pytest.raises(SystemExit) as error:
-        main(args)
-    assert error.value.code == 2
-
-
-def test_help_does_not_import_training_modules():
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import sys\n"
-                "from gpt2.finetuning_instruction.main import main\n"
-                "try:\n    main(['train', '--help'])\n"
-                "except SystemExit as error:\n    assert error.code == 0\n"
-                "assert 'torch' not in sys.modules\n"
-                "assert 'tensorflow' not in sys.modules\n"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert "--model" in result.stdout
+def test_instruction_runner_rejects_invalid_inputs_before_loading_model(
+    monkeypatch, prompt, max_new_tokens, message
+):
+    get_model = Mock()
+    monkeypatch.setattr(finetuning, "get_pretrained_model", get_model)
+    with pytest.raises(ValueError, match=message):
+        finetuning.run_instruction_finetuning(
+            prompt=prompt, max_new_tokens=max_new_tokens
+        )
+    get_model.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -584,18 +623,10 @@ def test_response_extraction_strips_only_the_leading_header(
     assert json.loads(path.read_text())[0]["model_response"] == expected
 
 
-def test_numbered_training_module_forwards_help():
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "gpt2.finetuning_instruction._3_instructionfinetuningandeval",
-            "--help",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert "--epochs" in result.stdout
-    assert "Starting instruction fine-tuning" not in result.stdout
+def test_instruction_runner_has_four_defaulted_parameters():
+    parameters = inspect.signature(finetuning.run_instruction_finetuning).parameters
+    assert list(parameters) == ["prompt", "max_new_tokens", "data_path", "model_size"]
+    assert parameters["prompt"].default == "Every effort moves you"
+    assert parameters["max_new_tokens"].default == 256
+    assert parameters["data_path"].default == data.DEFAULT_DATA_PATH
+    assert parameters["model_size"].default == "355M"

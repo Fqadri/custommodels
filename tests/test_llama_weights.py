@@ -1,8 +1,11 @@
 import pytest
 import torch
 
-from llama2.download_load_weights import assign, load_weights_into_llama
-from llama2.llama2model import Llama2Model
+from llama2.model.llama2_model import Llama2Model
+from llama2.save_load_model.load_llama2_modelweights import (
+    assign,
+    load_weights_into_llama,
+)
 
 
 @pytest.fixture

@@ -41,15 +41,16 @@ def print_gradients(model, x):
         if 'weight' in name: # Only print gradients for weight parameters
             print(f"{name} has a gradient mean of {param.grad.abs().mean().item()}")
 
-# Example usage
-torch.manual_seed(123)  # For reproducibility
-layer_sizes = [3, 3, 3, 3, 3, 1] # Example layer sizes
-sample_input = torch.tensor([[[0.1, 0.0, -1.0]]]) # Example input tensor of shape (1, 1, 3)
+def run_shortconnection_concept():
+    # Example usage
+    torch.manual_seed(123)  # For reproducibility
+    layer_sizes = [3, 3, 3, 3, 3, 1] # Example layer sizes
+    sample_input = torch.tensor([[[0.1, 0.0, -1.0]]]) # Example input tensor of shape (1, 1, 3)
 
-print("Without Shortcut Connections:\n")
-model_without_shortcut = ExampleShortcutConnection(layer_sizes, use_shortcut=False)
-print_gradients(model_without_shortcut, sample_input)
+    print("Without Shortcut Connections:\n")
+    model_without_shortcut = ExampleShortcutConnection(layer_sizes, use_shortcut=False)
+    print_gradients(model_without_shortcut, sample_input)
 
-print("\nWith Shortcut Connections:\n")
-model_with_shortcut = ExampleShortcutConnection(layer_sizes, use_shortcut=True)
-print_gradients(model_with_shortcut, sample_input)
+    print("\nWith Shortcut Connections:\n")
+    model_with_shortcut = ExampleShortcutConnection(layer_sizes, use_shortcut=True)
+    print_gradients(model_with_shortcut, sample_input)

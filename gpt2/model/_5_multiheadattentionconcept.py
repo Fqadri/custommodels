@@ -38,7 +38,6 @@ class CausalAttention(nn.Module):
         context_vector = attn_weights @ values 
         return context_vector
 
-
 # Wrapper class for multiple attention heads.
 # This class allows us to create multiple attention heads and concatenate their outputs.
 # It is a simplified version of the MultiHeadAttention class.
@@ -59,30 +58,31 @@ class MultiHeadAttentionSimple(nn.Module):
         return torch.cat([head(x) for head in self.heads], dim=-1)
 
 
-torch.manual_seed(123)  # For reproducibility
+def run_multihead_attention_simple():
+    torch.manual_seed(123)  # For reproducibility
 
-# Using 3 dimensions for simplicity.
-inputs = torch.tensor([
-    [0.43, 0.15, 0.89],   #Your
-    [0.55, 0.87, 0.66],   #journey
-    [0.57, 0.85, 0.64],   #starts
-    [0.22, 0.58, 0.33],   #with
-    [0.77, 0.25, 0.10],   #one
-    [0.05, 0.80, 0.55]    #step
-])
+    # Using 3 dimensions for simplicity.
+    inputs = torch.tensor([
+        [0.43, 0.15, 0.89],   #Your
+        [0.55, 0.87, 0.66],   #journey
+        [0.57, 0.85, 0.64],   #starts
+        [0.22, 0.58, 0.33],   #with
+        [0.77, 0.25, 0.10],   #one
+        [0.05, 0.80, 0.55]    #step
+    ])
 
-batchedInputs = torch.stack([inputs, inputs], dim=0)  # Create a batch of 2 input sequences
+    batchedInputs = torch.stack([inputs, inputs], dim=0)  # Create a batch of 2 input sequences
 
-context_length = batchedInputs.shape[1]  # Number of tokens in each input sequence
+    context_length = batchedInputs.shape[1]  # Number of tokens in each input sequence
 
-# Create an instance of the MultiHeadAttentionSimple class with 2 heads
-mha = MultiHeadAttentionSimple(dim_in=3, dim_out=3, context_length=context_length, dropout=0.5, num_heads=2)  
+    # Create an instance of the MultiHeadAttentionSimple class with 2 heads
+    mha = MultiHeadAttentionSimple(dim_in=3, dim_out=3, context_length=context_length, dropout=0.5, num_heads=2)  
 
-# Compute the context vectors for the batch of input sequences
-context_vectors = mha(batchedInputs)  
+    # Compute the context vectors for the batch of input sequences
+    context_vectors = mha(batchedInputs)  
 
-# Should be (2, 6, 6). 2 is for the 2 input sequences matrices. Basically, (batch_size, num_tokens, dim_out X num_heads).
-# 6 rows each is for each token in the input sequence and 
-# final 6 is for the concatenated output of 2 heads, each with 3 dimensions.
-print("\nContext Vectors Shape:", context_vectors.shape)  
-print("\nContext Vectors:\n", context_vectors) 
+    # Should be (2, 6, 6). 2 is for the 2 input sequences matrices. Basically, (batch_size, num_tokens, dim_out X num_heads).
+    # 6 rows each is for each token in the input sequence and 
+    # final 6 is for the concatenated output of 2 heads, each with 3 dimensions.
+    print("\nContext Vectors Shape:", context_vectors.shape)  
+    print("\nContext Vectors:\n", context_vectors) 
