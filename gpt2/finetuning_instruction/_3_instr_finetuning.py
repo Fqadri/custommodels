@@ -12,6 +12,7 @@ from common.pretraining import (
     train_model_simple,
 )
 from common.tokenization import text_to_token_ids, token_ids_to_text
+from gpt2.finetuning_instruction.LoRA.linear_with_lora import replace_linear_with_lora
 
 from ..model._12_gpt2model import GPT2Model
 from ..model.gpt2_tokenizer import GPT2Tokenizer
@@ -169,12 +170,16 @@ def get_pretrained_model(
 
     return model.eval()
 
+def _get_total_trainable_parameters(model: torch.nn.Module) -> int:
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 def run_instruction_finetuning(
     prompt: str = "Every effort moves you",
     max_new_tokens: int = 256,
     data_path: str | Path = DEFAULT_DATA_PATH, # path to instruction dataset
     model_size: str = "124M",
     run_test_data: bool = False,
+    use_lora: bool = False,
 ) -> Path:
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("prompt must be a non-empty string.")
@@ -202,8 +207,7 @@ def run_instruction_finetuning(
     print(f"\nDevice: {device}")
     print("\nPrompt:", prompt)
 
-    print("\n-------------Before instruction fine-tuning:----------------")
-    print("\nModel Response Before Fine-Tuning::")
+    print("\n-------------Before instruction fine-tuning Model Response----------------")
     print(
         _generate_instruction_response(
             model, input_text, tokenizer, device,
@@ -211,6 +215,9 @@ def run_instruction_finetuning(
         )
     )
 
+    print("\n--------------------------------------------------------------------------")
+
+    print("\n-------------Preparing Data for Instruction Fine-Tuning ----------------")
     train_data, val_data, test_data, train_loader, val_loader, _ = (
         create_train_val_test_dataloaders(
             load_data(data_path),
@@ -222,11 +229,22 @@ def run_instruction_finetuning(
         )
     )
 
-    print("\n---------------------------------------------------------")
-    
     print(f"\n\nTrain: {len(train_data)}, validation: {len(val_data)}, test: {len(test_data)}")
     print("\nInitial losses before instruction fine-tuning:")
     print_initial_loss(train_loader, val_loader, model, device)
+
+    print("\n--------------------------------------------------------------------------")
+
+    if use_lora:
+        print(f"Total trainable parameters before LoRA: {_get_total_trainable_parameters(model)}")
+        # Step 1: Freeze the original model parameters. After this call, none of the parameters are trainable.
+        for param in model.parameters():
+            param.requires_grad = False
+
+        # Step 2: Replace Linear layers with LoRA adapters. After this call, only LoRA introduced parameters are trainable.
+        replace_linear_with_lora(model, 16, 16)
+        print(f"Total trainable parameters after LoRA: {_get_total_trainable_parameters(model)}")
+
 
     print("starttime:", time.strftime("%Y-%m-%d %H:%M:%S"), "Starting instruction fine-tuning:")
     
@@ -243,8 +261,8 @@ def run_instruction_finetuning(
     )
 
     print("\n\nInstruction fine-tuning completed at:", time.strftime("%Y-%m-%d %H:%M:%S"))
-    print("\n-------------After instruction fine-tuning:----------------")
-    print("\nModel Response After Fine-Tuning::")
+    print("\n-------------After instruction fine-tuning Model Response----------------")
+    
     print(
         _generate_instruction_response(
             model, input_text, tokenizer, device,
@@ -252,7 +270,9 @@ def run_instruction_finetuning(
         )
     )
 
-    print("\n---------------------------------------------------------")
+    print("\n--------------------------------------------------------------------------")
+
+
 
     # Save the fine-tuned model checkpoint
     output_dir = Path(DEFAULT_OUTPUT_DIR)
@@ -270,8 +290,7 @@ def run_instruction_finetuning(
         epochs_seen,
         tokens_seen,
         train_losses,
-        val_losses,
-        output_path=output_dir / "losses.png",
+        val_losses
     )
 
     if run_test_data:

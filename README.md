@@ -92,7 +92,7 @@ From the repository root, run this in CMD or PowerShell. `uv run` uses the
 project environment without requiring activation:
 
 [run_instruction_finetuning](gpt2/finetuning_instruction/_3_instr_finetuning.py)
-is a plain Python function with five optional parameters:
+is a plain Python function with six optional parameters:
 
 - `prompt`: defaults to `"Translate to Spanish - Hello World"`.
 - `max_new_tokens`: defaults to `256`; limits the before/after responses and
@@ -107,6 +107,9 @@ is a plain Python function with five optional parameters:
   responses for the held-out test dataset after fine-tuning. Training,
   before/after prompt responses, checkpoint saving, and loss plotting still
   run when it is `False`.
+- `use_lora`: defaults to `False`. Set to `True` to freeze the pretrained
+  weights and train LoRA adapters instead. The current adapter rank and alpha
+  are both `16`.
 
 Instruction data is local-only. Missing files raise `FileNotFoundError`;
 no dataset download is attempted. OpenAI model weights are downloaded on
@@ -114,6 +117,12 @@ first use and cached for later runs.
 
 ```powershell
 uv run python -c "from gpt2.finetuning_instruction._3_instr_finetuning import run_instruction_finetuning; run_instruction_finetuning(prompt='Translate to Spanish - Hello World', max_new_tokens=100, data_path=r'gpt2\finetuning_instruction\instruction-data.json', model_size='124M', run_test_data=False)"
+```
+
+For **LoRA fine-tuning**, add `use_lora=True`:
+
+```powershell
+uv run python -c "from gpt2.finetuning_instruction._3_instr_finetuning import run_instruction_finetuning; run_instruction_finetuning(prompt='Translate to Spanish - Hello World', max_new_tokens=100, data_path=r'gpt2\finetuning_instruction\instruction-data.json', model_size='124M', run_test_data=False, use_lora=True)"
 ```
 
 The workflow:
