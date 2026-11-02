@@ -54,23 +54,23 @@ def test_loading_keeps_all_parameters_registered_and_copies_weights(
     buffers_before = {name: value.clone() for name, value in model.named_buffers()}
     mapping = {
         "tok_embeddings.weight": "tok_emb.weight",
-        "norm.weight": "final_norm.weight",
+        "norm.weight": "final_norm.scale",
         "output.weight": "out_head.weight",
     }
     for index in range(cfg["n_layers"]):
         for original, destination in (
-            ("attention.wq", "attention.W_query"),
-            ("attention.wk", "attention.W_key"),
-            ("attention.wv", "attention.W_value"),
-            ("attention.wo", "attention.out_projection"),
-            ("attention_norm", "norm1"),
-            ("feed_forward.w1", "ff.fc1"),
-            ("feed_forward.w3", "ff.fc2"),
-            ("feed_forward.w2", "ff.fc3"),
-            ("ffn_norm", "norm2"),
+            ("attention.wq", "attention.W_query.weight"),
+            ("attention.wk", "attention.W_key.weight"),
+            ("attention.wv", "attention.W_value.weight"),
+            ("attention.wo", "attention.out_projection.weight"),
+            ("attention_norm", "norm1.scale"),
+            ("feed_forward.w1", "ff.fc1.weight"),
+            ("feed_forward.w3", "ff.fc2.weight"),
+            ("feed_forward.w2", "ff.fc3.weight"),
+            ("ffn_norm", "norm2.scale"),
         ):
             mapping[f"layers.{index}.{original}.weight"] = (
-                f"trf_blocks.{index}.{destination}.weight"
+                f"trf_blocks.{index}.{destination}"
             )
 
     assert set(mapping.values()) == set(parameters_before)

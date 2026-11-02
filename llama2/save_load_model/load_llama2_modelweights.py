@@ -96,7 +96,7 @@ def load_weights_into_llama(model, param_config, weights_file) :
             weights[f"layers.{l}.attention.wo.weight"]
         )
         assign(
-            model.trf_blocks[l].norm1.weight,
+            model.trf_blocks[l].norm1.scale,
             weights[f"layers.{l}.attention_norm.weight"]
         )
 
@@ -115,12 +115,12 @@ def load_weights_into_llama(model, param_config, weights_file) :
             weights[f"layers.{l}.feed_forward.w2.weight"]
         )
         assign(
-            model.trf_blocks[l].norm2.weight,
+            model.trf_blocks[l].norm2.scale,
             weights[f"layers.{l}.ffn_norm.weight"]
         )
 
     # Load output layer weights
-    assign(model.final_norm.weight, weights["norm.weight"])
+    assign(model.final_norm.scale, weights["norm.weight"])
     assign(model.out_head.weight, weights["output.weight"])
 
     return

@@ -187,7 +187,7 @@ def test_model_wires_llama_components_and_backpropagates(config, dtype):
         assert isinstance(block.norm1, RMSNorm)
         assert isinstance(block.norm2, RMSNorm)
         assert block.norm1 is not block.norm2
-    assert model.trf_blocks[0].norm1.weight is not model.trf_blocks[1].norm1.weight
+    assert model.trf_blocks[0].norm1.scale is not model.trf_blocks[1].norm1.scale
     for module in model.modules():
         if isinstance(module, nn.Linear):
             assert module.bias is None
@@ -212,11 +212,11 @@ def test_rmsnorm_avoids_fp16_square_overflow():
     x = torch.full((1, 1, 8), 1000.0, dtype=torch.float16, requires_grad=True)
     output = norm(x)
     torch.testing.assert_close(output, torch.ones_like(x))
-    assert "weight" in dict(norm.named_parameters())
-    assert norm.weight.dtype == torch.float16
+    assert "scale" in dict(norm.named_parameters())
+    assert norm.scale.dtype == torch.float16
     output.sum().backward()
-    assert norm.weight.grad is not None
-    assert torch.isfinite(norm.weight.grad).all()
+    assert norm.scale.grad is not None
+    assert torch.isfinite(norm.scale.grad).all()
     assert x.grad is not None
     assert torch.isfinite(x.grad).all()
 

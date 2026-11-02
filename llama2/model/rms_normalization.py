@@ -10,9 +10,9 @@ class RMSNorm(nn.Module):
         self.eps = eps # Small constant to avoid division by zero
         self.emb_dim = emb_dim
 
-        # Pure normalization strips variance information. The learnable weight allows the network to learn optimal feature scales for each dimension independently during backpropagation.
-        # Certain feature dimensions inside a Transformer represent crucial signals that need higher relative magnitudes than others. The weight vector lets the model amplify important channels while dampening noisy ones.
-        self.weight = nn.Parameter(torch.ones(emb_dim, dtype=dtype))
+        # Normalization controls the vector’s overall magnitude; scale gives the model flexibility to adjust each feature afterward.
+        # During training, backpropagation adjusts these values to amplify or reduce (i.e. scale) individual features.
+        self.scale = nn.Parameter(torch.ones(emb_dim, dtype=dtype))
 
     def forward(self, x):
         # Accumulate squared values in float32 for low-precision inputs to avoid overflow.
@@ -21,4 +21,4 @@ class RMSNorm(nn.Module):
             norm_input = x.float()
         means = norm_input.pow(2).mean(dim=-1, keepdim=True)
         x_normed = norm_input * torch.rsqrt(means + self.eps)
-        return (x_normed * self.weight).to(dtype=x.dtype)
+        return (x_normed * self.scale).to(dtype=x.dtype)
