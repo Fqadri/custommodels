@@ -236,13 +236,15 @@ def run_instruction_finetuning(
     print("\n--------------------------------------------------------------------------")
 
     if use_lora:
+        alpha = 16
+        rank = 16
         print(f"Total trainable parameters before LoRA: {_get_total_trainable_parameters(model)}")
         # Step 1: Freeze the original model parameters. After this call, none of the parameters are trainable.
         for param in model.parameters():
             param.requires_grad = False
 
         # Step 2: Replace Linear layers with LoRA adapters. After this call, only LoRA introduced parameters are trainable.
-        replace_linear_with_lora(model, 16, 16)
+        replace_linear_with_lora(model, rank, alpha)
         print(f"Total trainable parameters after LoRA: {_get_total_trainable_parameters(model)}")
 
 
@@ -272,19 +274,39 @@ def run_instruction_finetuning(
 
     print("\n--------------------------------------------------------------------------")
 
-
-
     # Save the fine-tuned model checkpoint
     output_dir = Path(DEFAULT_OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = output_dir / f"gpt2-{model_size}-sft.pth"
-    torch.save(model.state_dict(), checkpoint_path)
-    
-    print(f"\n\nFine-tuned model saved to {checkpoint_path}")
 
+    # with LoRA, base model weights were frozen (you don't need to save them again) so we only have to save the LoRA parameters.
+    if use_lora:
+        checkpoint_path = output_dir / f"gpt2-{model_size}-lora.pth"
+        print("\n------------- Saving Model Checkpoint (only LoRA parameters) at ", checkpoint_path, " ----------------")
+
+        lora_state_dict = {
+            name: param.detach().cpu()
+            for name, param in model.named_parameters()
+            if name.endswith((".lora.A", ".lora.B"))
+        }
+
+        torch.save(
+            {
+                "lora_state_dict": lora_state_dict,
+                "rank": rank,
+                "alpha": alpha,
+                "base_model": f"gpt2-{model_size}",
+            },
+            checkpoint_path,
+        )
+    else:
+        checkpoint_path = output_dir / f"gpt2-{model_size}-sft.pth"
+        print("\n------------- Saving Model Checkpoint (full model) at ", checkpoint_path, " ----------------")
+        torch.save(model.state_dict(), checkpoint_path)
+
+
+
+    print(f"\n\n-------------- Plotting training and validation losses ----------------")
     epochs_seen = (torch.arange(len(train_losses)) * 5 + 1) / len(train_loader)
-
-    print(f"\n\nPlotting training and validation losses")
 
     plot_losses(
         epochs_seen,
