@@ -180,6 +180,7 @@ def run_instruction_finetuning(
     model_size: str = "124M",
     run_test_data: bool = False,
     use_lora: bool = False,
+    use_alpaca_dataset: bool = False,
 ) -> Path:
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("prompt must be a non-empty string.")
@@ -218,6 +219,13 @@ def run_instruction_finetuning(
     print("\n--------------------------------------------------------------------------")
 
     print("\n-------------Preparing Data for Instruction Fine-Tuning ----------------")
+    if use_alpaca_dataset:
+        print("Using the Alpaca dataset from:", data_path)
+        data_path = (
+            "https://raw.githubusercontent.com/tatsu-lab/stanford_alpaca/"
+            "refs/heads/main/alpaca_data.json"
+        )
+
     train_data, val_data, test_data, train_loader, val_loader, _ = (
         create_train_val_test_dataloaders(
             load_data(data_path),

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import TypedDict
+from urllib.request import urlopen
 
 DEFAULT_DATA_PATH = Path(__file__).with_name("instruction-data.json")
 
@@ -12,8 +13,13 @@ class InstructionEntry(TypedDict):
 
 
 def load_data(file_path: str | Path = DEFAULT_DATA_PATH) -> list[InstructionEntry]:
-    with Path(file_path).open(encoding="utf-8") as file:
-        raw_data = json.load(file)
+    # if path is a URL, load data from it
+    if isinstance(file_path, str) and file_path.startswith("https://"):
+        with urlopen(file_path, timeout=30) as response:
+            raw_data = json.load(response)
+    else:
+        with Path(file_path).open(encoding="utf-8") as file:
+            raw_data = json.load(file)
     if not isinstance(raw_data, list) or not raw_data:
         raise ValueError("Instruction data must be a non-empty JSON list.")
 

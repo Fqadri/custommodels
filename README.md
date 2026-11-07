@@ -110,10 +110,10 @@ is a plain Python function with six optional parameters:
 - `use_lora`: defaults to `False`. Set to `True` to freeze the pretrained
   weights and train LoRA adapters instead. The current adapter rank and alpha
   are both `16`.
+- `use_alpaca_dataset`: defaults to `False`. Set to `True` to use Alpaca dataset which has over 50K 
+  samples otherwise uses local 1K sample instruction dataset.
 
-Instruction data is local-only. Missing files raise `FileNotFoundError`;
-no dataset download is attempted. OpenAI model weights are downloaded on
-first use and cached for later runs.
+OpenAI model weights are downloaded on first use and cached for later runs.
 
 ```powershell
 uv run python -c "from gpt2.finetuning_instruction._3_instr_finetuning import run_instruction_finetuning; run_instruction_finetuning(prompt='Translate to Spanish - Hello World', max_new_tokens=100, data_path=r'gpt2\finetuning_instruction\instruction-data.json', model_size='124M', run_test_data=False)"

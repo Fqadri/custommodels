@@ -36,6 +36,8 @@ class LinearWithLoRA(torch.nn.Module):
         return self.linear(x) + self.lora(x)
 
 
+# Replaces all linear layers (nn.Linear type) in a model with LinearWithLoRA layers.
+# E.g. Wq,k,v,o then FFN weight matrices, Final output/LM head weight matrix.
 def replace_linear_with_lora(model, rank, alpha):
     for name, module in model.named_children():
         if isinstance(module, torch.nn.Linear): # replaces linear layer with LinearWithLoRA layer
